@@ -174,7 +174,6 @@ func serverHandler(id int, conn net.Conn, clip *clipboard, remoteMsg map[int]cha
 
 // printServerClipboard sends a request to the server to print its internal
 // representation of the clipboard.
-
 func printServerClipboard() (string, error) {
 	buf := make([]byte, bufSize)
 	conn, err := net.Dial("unix", sockFile)

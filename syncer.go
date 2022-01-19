@@ -5,40 +5,10 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 )
-
-// readClipboard returns the contents of the primary clipboard.
-func readClipboard() (string, error) {
-	xclip := exec.Command("xclip", "-o")
-	out, err := xclip.Output()
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
-}
-
-// writeClipboard sets the contents of the primary clipboard.
-func writeClipboard(contents string) error {
-	xclip := exec.Command("xclip")
-	stdin, err := xclip.StdinPipe()
-	if err != nil {
-		return err
-	}
-	xclip.Start()
-
-	if _, err = stdin.Write([]byte(contents)); err != nil {
-		return err
-	}
-	stdin.Close()
-	xclip.Wait()
-
-	log.Debugf("writeClipboard: Set clipboard to %s", contents)
-	return nil
-}
 
 // publishToServer opens a socket to the server and publishes the contents.
 func publishToServer(contents string) error {
@@ -107,12 +77,7 @@ func subscribeToServer(clip *clipboard) {
 // never returns.
 func publishClipboard(clip *clipboard) {
 	for {
-		xclipboard, err := readClipboard()
-		if err != nil {
-			log.Errorf("publishClipboard: error reading clipboard: %v", err)
-			time.Sleep(time.Second)
-			continue
-		}
+		xclipboard := readClipboard()
 		value := clip.get()
 
 		// No changes, move on...

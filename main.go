@@ -15,7 +15,7 @@ const (
 	sockFile = "/tmp/.clipshare.sock"
 
 	// bufSize for socket reads.
-	bufSize = 4096
+	bufSize = 32 * 1024 * 1024
 )
 
 // BuildVersion Holds the current git HEAD version number.

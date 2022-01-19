@@ -134,14 +134,21 @@ func publishClipboard(clip *clipboard) {
 	}
 }
 
-// publishReader sends the contents of the io.Reader to all clipboards. The local
-// clipboard will be set by the syncer (running in another instance).
-func publishReader(r io.Reader) error {
-	contents, err := io.ReadAll(r)
+// publishReader sends the contents of the io.Reader to all clipboards. The
+// local clipboard will be set by the syncer (running in another instance). If
+// 'filter' is set, the contents of the standard input are re-printed in the
+// standard output.
+func publishReader(r io.Reader, filter bool) error {
+	data, err := io.ReadAll(r)
 	if err != nil {
 		return err
 	}
-	if err = publishToServer(string(contents)); err != nil {
+	contents := string(data)
+
+	if filter {
+		fmt.Print(contents)
+	}
+	if err = publishToServer(contents); err != nil {
 		return err
 	}
 	return nil

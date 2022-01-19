@@ -28,10 +28,15 @@ func main() {
 		optNocolors = app.Flag("no-colors", "Verbose mode.").Bool()
 		optVerbose  = app.Flag("verbose", "Verbose mode.").Short('v').Bool()
 
-		printCmd   = app.Command("print", "Print the server clipboard.")
-		serverCmd  = app.Command("server", "Run in server mode.")
-		syncCmd    = app.Command("sync", "Connect to a server and sync clipboards.")
-		sendCmd    = app.Command("send", "Send contents of stdin to all clipboards.")
+		copyCmd       = app.Command("copy", "Send contents of stdin to all clipboards.")
+		copyCmdFilter = copyCmd.Flag("filter", "Work as a filter: also copy stdin to stdout.").Short('f').Bool()
+
+		pasteCmd = app.Command("paste", "Paste from the server clipboard.")
+
+		serverCmd = app.Command("server", "Run in server mode.")
+
+		syncCmd = app.Command("sync", "Connect to a server and sync clipboards.")
+
 		versionCmd = app.Command("version", "Show version information.")
 
 		err error
@@ -50,14 +55,15 @@ func main() {
 	}
 
 	switch k {
-	case printCmd.FullCommand():
+	case pasteCmd.FullCommand():
 		contents, err := printServerClipboard()
 		if err != nil {
 			log.Fatalf("Error requesting server clipboard: %v", err)
 		}
 		fmt.Print(contents)
-	case sendCmd.FullCommand():
-		if err = publishReader(os.Stdin); err != nil {
+
+	case copyCmd.FullCommand():
+		if err = publishReader(os.Stdin, *copyCmdFilter); err != nil {
 			log.Fatalf("Error sending contents to clipboards: %v", err)
 		}
 

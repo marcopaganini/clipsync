@@ -40,8 +40,10 @@ func server() error {
 		return fmt.Errorf("Error removing socket file (%s): %v", sockFile, err)
 	}
 
+	mask := syscall.Umask(0077)
 	listen, err := net.Listen("unix", sockFile)
 	if err != nil {
+		syscall.Umask(mask)
 		return fmt.Errorf("Listen error: %v", err)
 	}
 
@@ -63,6 +65,7 @@ func server() error {
 	// Accept returns a new connection for each new connection to this server.
 	for {
 		conn, err := listen.Accept()
+		syscall.Umask(mask)
 		if err != nil {
 			return fmt.Errorf("Accept error: %v", err)
 		}

@@ -10,11 +10,21 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 
 	log "github.com/sirupsen/logrus"
 )
+
+// sockPath returns the full path to the socket file.
+func sockPath(name string) (string, error) {
+	home := os.Getenv("HOME")
+	if home == "" {
+		return "", fmt.Errorf("sockPath: environment variable HOME not set")
+	}
+	return filepath.Join(home, name), nil
+}
 
 // removeSocket removes an existing socket file, if it exists.
 func removeSocket(sockfile string) error {
@@ -34,17 +44,22 @@ func server() error {
 	// clip holds the contents of the clipboard for get/set operations.
 	clip := &clipboard{}
 
-	log.Infof("Starting server")
+	sockfile, err := sockPath(sockFilename)
+	if err != nil {
+		return err
+	}
 
-	if err := removeSocket(sockFile); err != nil {
-		return fmt.Errorf("Error removing socket file (%s): %v", sockFile, err)
+	log.Infof("Starting server on socket %s", sockfile)
+
+	if err := removeSocket(sockfile); err != nil {
+		return fmt.Errorf("server: Error removing socket file (%s): %v", sockfile, err)
 	}
 
 	mask := syscall.Umask(0077)
-	listen, err := net.Listen("unix", sockFile)
+	listen, err := net.Listen("unix", sockfile)
 	if err != nil {
 		syscall.Umask(mask)
-		return fmt.Errorf("Listen error: %v", err)
+		return fmt.Errorf("server: Listen error: %v", err)
 	}
 
 	// Signal handling.
@@ -67,7 +82,7 @@ func server() error {
 		conn, err := listen.Accept()
 		syscall.Umask(mask)
 		if err != nil {
-			return fmt.Errorf("Accept error: %v", err)
+			return fmt.Errorf("server: Accept error: %v", err)
 		}
 		remoteMsg[id] = make(chan string)
 
@@ -178,8 +193,12 @@ func serverHandler(id int, conn net.Conn, clip *clipboard, remoteMsg map[int]cha
 // printServerClipboard sends a request to the server to print its internal
 // representation of the clipboard.
 func printServerClipboard() (string, error) {
+	sockfile, err := sockPath(sockFilename)
+	if err != nil {
+		return "", err
+	}
 	buf := make([]byte, bufSize)
-	conn, err := net.Dial("unix", sockFile)
+	conn, err := net.Dial("unix", sockfile)
 	if err != nil {
 		log.Errorf("printServerClipboard: dial error: %v", err)
 		return "", err

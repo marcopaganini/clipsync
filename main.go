@@ -11,8 +11,7 @@ import (
 )
 
 const (
-	// Name of the unix socket file to use.
-	sockFile = "/tmp/.clipshare.sock"
+	sockFilename = ".clipshare.sock"
 
 	// bufSize for socket reads.
 	bufSize = 32 * 1024 * 1024

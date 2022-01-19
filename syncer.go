@@ -12,7 +12,12 @@ import (
 
 // publishToServer opens a socket to the server and publishes the contents.
 func publishToServer(contents string) error {
-	conn, err := net.Dial("unix", sockFile)
+	sockfile, err := sockPath(sockFilename)
+	if err != nil {
+		return err
+	}
+
+	conn, err := net.Dial("unix", sockfile)
 	if err != nil {
 		log.Errorf("publishToServer: dial error: %v", err)
 		return err
@@ -28,17 +33,17 @@ func publishToServer(contents string) error {
 // subscribeToServer constantly reads from the server and updates the in-memory
 // clipboard, and the local (if DISPLAY is set) with any changes reported by
 // the remote.
-func subscribeToServer(clip *clipboard) {
+func subscribeToServer(sock string, clip *clipboard) {
 	for {
 		// Create connection.
 		buf := make([]byte, bufSize)
-		conn, err := net.Dial("unix", sockFile)
+		conn, err := net.Dial("unix", sock)
 		if err != nil {
 			log.Errorf("subcribeToServer: dial error: %v", err)
 			time.Sleep(10 * time.Second)
 			continue
 		}
-		log.Infof("subcribeToServer: Connected to %s", sockFile)
+		log.Infof("subcribeToServer: Connected to %s", sock)
 
 		// Send Subscribe command.
 		if _, err := fmt.Fprintln(conn, "SUB"); err != nil {
@@ -123,8 +128,13 @@ func publishReader(r io.Reader, filter bool) error {
 // clipboard. Subscribing to a server will sync the in-memory version of the
 // clipboard to that server.
 func syncer() {
+	sockfile, err := sockPath(sockFilename)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	clip := &clipboard{}
-	go subscribeToServer(clip)
+	go subscribeToServer(sockfile, clip)
 
 	// Only attempt to sync the local (machine) clipboard if the DISPLAY
 	// environment variable is set.

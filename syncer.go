@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	backoff "github.com/cenkalti/backoff/v4"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -19,7 +20,7 @@ func publishToServer(contents string) error {
 
 	conn, err := net.Dial("unix", sockfile)
 	if err != nil {
-		log.Errorf("publishToServer: dial error: %v", err)
+		log.Errorf("publishToServer: %v", err)
 		return err
 	}
 	if _, err := fmt.Fprintf(conn, "PUB\n%s", contents); err != nil {
@@ -33,24 +34,32 @@ func publishToServer(contents string) error {
 // subscribeToServer constantly reads from the server and updates the in-memory
 // clipboard, and the local (if DISPLAY is set) with any changes reported by
 // the remote.
-func subscribeToServer(sock string, clip *clipboard) {
+func subscribeToServer(sockfile string, clip *clipboard) {
 	for {
 		// Create connection.
 		buf := make([]byte, bufSize)
-		conn, err := net.Dial("unix", sock)
-		if err != nil {
-			log.Errorf("subcribeToServer: dial error: %v", err)
-			time.Sleep(10 * time.Second)
-			continue
-		}
-		log.Infof("subcribeToServer: Connected to %s", sock)
 
-		// Send Subscribe command.
-		if _, err := fmt.Fprintln(conn, "SUB"); err != nil {
-			log.Infof("subscribeToServer: Error writing to socket: %v\n", err)
-			time.Sleep(10 * time.Second)
-			continue
-		}
+		// Dial and send subscribe command (with exponential backoff).
+
+		var conn net.Conn
+
+		backoff.Retry(func() error {
+			var err error
+
+			conn, err = net.Dial("unix", sockfile)
+			if err != nil {
+				log.Errorf("subcribeToServer: %v", err)
+				return err
+			}
+			log.Infof("subcribeToServer: Connected to %s", sockfile)
+
+			// Send Subscribe command.
+			if _, err = fmt.Fprintln(conn, "SUB"); err != nil {
+				log.Infof("subscribeToServer: Error writing to socket: %v\n", err)
+				return err
+			}
+			return nil
+		}, backoff.NewExponentialBackOff())
 
 		// Read contents until killed.
 		for {

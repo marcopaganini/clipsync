@@ -3,6 +3,7 @@ module clipshare
 go 1.17
 
 require (
+	github.com/cenkalti/backoff/v4 v4.1.2
 	github.com/sirupsen/logrus v1.8.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 )

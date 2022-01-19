@@ -200,7 +200,7 @@ func printServerClipboard() (string, error) {
 	buf := make([]byte, bufSize)
 	conn, err := net.Dial("unix", sockfile)
 	if err != nil {
-		log.Errorf("printServerClipboard: dial error: %v", err)
+		log.Errorf("printServerClipboard: %v", err)
 		return "", err
 	}
 	if _, err := fmt.Fprintf(conn, "PRINT\n"); err != nil {

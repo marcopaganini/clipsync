@@ -44,14 +44,18 @@ func main() {
 	// Command-line parsing.
 	k := kingpin.MustParse(app.Parse(os.Args[1:]))
 
+	// Log formatting options.
 	if *optVerbose {
 		log.SetLevel(log.DebugLevel)
 	}
-	if *optNocolors {
-		log.SetFormatter(&log.TextFormatter{
-			DisableColors: true,
-		})
+	logFormat := &log.TextFormatter{
+		FullTimestamp:          true,
+		DisableLevelTruncation: true,
 	}
+	if *optNocolors {
+		logFormat.DisableColors = true
+	}
+	log.SetFormatter(logFormat)
 
 	switch k {
 	case pasteCmd.FullCommand():

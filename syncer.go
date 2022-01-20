@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	syncerLockFile = "/var/run/lock/clipshare-server.lock"
+	syncerLockFile = "/var/run/lock/clipshare-syncer.lock"
 )
 
 // publishToServer opens a socket to the server and publishes the contents.
@@ -96,6 +96,7 @@ func subscribeToServer(sockfile string, clip *clipboard) {
 // updates the remote clipboard server when changes happen. This function
 // never returns.
 func publishClipboard(clip *clipboard) {
+	log.Debugf("About to publishClipboard")
 	for {
 		xclipboard := readClipboard()
 		value := clip.get()

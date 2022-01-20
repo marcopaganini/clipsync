@@ -14,7 +14,12 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/fredli74/lockfile"
 	log "github.com/sirupsen/logrus"
+)
+
+const (
+	serverLockFile = "/var/run/lock/clipshare-server.lock"
 )
 
 // sockPath returns the full path to the socket file.
@@ -41,6 +46,13 @@ func removeSocket(sockfile string) error {
 
 // server starts a local server for read/write operations to the clipboard file.
 func server() error {
+	// Allow only one instance.
+	if lock, err := lockfile.Lock(serverLockFile); err != nil {
+		log.Fatalf("Another instance of the server is already running.")
+	} else {
+		defer lock.Unlock()
+	}
+
 	// clip holds the contents of the clipboard for get/set operations.
 	clip := &clipboard{}
 

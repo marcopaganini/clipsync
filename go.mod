@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/cenkalti/backoff/v4 v4.1.2
+	github.com/fredli74/lockfile v0.0.0-20180308112638-92f5e1efe5d6
 	github.com/sirupsen/logrus v1.8.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 )

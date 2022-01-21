@@ -8,7 +8,6 @@ import (
 	"time"
 
 	backoff "github.com/cenkalti/backoff/v4"
-	"github.com/fredli74/lockfile"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -144,12 +143,8 @@ func publishReader(r io.Reader, filter bool) error {
 // clipboard. Subscribing to a server will sync the in-memory version of the
 // clipboard to that server.
 func syncer() {
-	// Allow only one instance.
-	if lock, err := lockfile.Lock(syncerLockFile); err != nil {
-		log.Fatalf("Another instance of the syncer is already running.")
-	} else {
-		defer lock.Unlock()
-	}
+	lock := singleInstanceOrDie(syncerLockFile)
+	defer lock.Unlock()
 
 	sockfile, err := sockPath(sockFilename)
 	if err != nil {

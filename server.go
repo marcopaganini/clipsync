@@ -55,32 +55,29 @@ func singleInstanceOrDie(lckfile string) *lockfile.LockFile {
 	return lock
 }
 
-// server starts a local server for read/write operations to the clipboard file.
-func server() error {
-	lock := singleInstanceOrDie(serverLockFile)
-	defer lock.Unlock()
-
-	// clip holds the contents of the clipboard for get/set operations.
-	clip := &clipboard{}
-
-	sockfile, err := sockPath(sockFilename)
-	if err != nil {
-		return err
-	}
-
+// socketListen removes any existing socketfiles named 'sockfile' and creates a
+// new unix domain socket using net.Listen. The file is chmoded 600 for
+// security reasons.
+func socketListen(sockfile string) (net.Listener, error) {
 	log.Infof("Starting server on socket %s", sockfile)
 	if err := removeSocket(sockfile); err != nil {
-		return fmt.Errorf("server: Error removing socket file (%s): %v", sockfile, err)
+		return nil, fmt.Errorf("error removing socket file (%s): %v", sockfile, err)
 	}
 
-	mask := syscall.Umask(0077)
 	listen, err := net.Listen("unix", sockfile)
 	if err != nil {
-		syscall.Umask(mask)
-		return fmt.Errorf("server: Listen error: %v", err)
+		return nil, fmt.Errorf("listen error: %v", err)
 	}
+	if err := os.Chmod(sockfile, 0600); err != nil {
+		return nil, fmt.Errorf("chmod error: %v", err)
+	}
+	return listen, nil
+}
 
-	// Signal handling.
+// sigTermHandler sets a signal handler to close the listener on SIGTERM and
+// issue an appropriate message to the user. This functino will exit the
+// program if sigterm is received.
+func sigTermHandler(listen net.Listener) {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	go func(listen net.Listener, c chan os.Signal) {
@@ -89,6 +86,23 @@ func server() error {
 		listen.Close()
 		os.Exit(0)
 	}(listen, sig)
+}
+
+// server starts a local server for read/write operations to the clipboard file.
+func server(sockfile string) error {
+	lock := singleInstanceOrDie(serverLockFile)
+	defer lock.Unlock()
+
+	// clip holds the contents of the clipboard for get/set operations.
+	clip := &clipboard{}
+
+	listen, err := socketListen(sockfile)
+	if err != nil {
+		return fmt.Errorf("server: %v", err)
+	}
+
+	// Signal handling.
+	sigTermHandler(listen)
 
 	id := 0
 	log.Infof("Starting accept loop.")
@@ -100,7 +114,6 @@ func server() error {
 		// server. We process the commands here and dispatch the long
 		// lived actions in a gorouting (currently, Subscribe).
 		conn, err := listen.Accept()
-		syscall.Umask(mask)
 		if err != nil {
 			return fmt.Errorf("server: Accept error: %v", err)
 		}
@@ -110,6 +123,11 @@ func server() error {
 		// Read command from client.
 		nbytes, err := conn.Read(buf)
 		if err != nil {
+			if err == io.EOF {
+				log.Infof("Client closed socket.")
+				conn.Close()
+				continue
+			}
 			return fmt.Errorf("server: Error reading socket: %v", err)
 		}
 		data := string(buf[0:nbytes])
@@ -198,11 +216,7 @@ func subHandler(id int, conn net.Conn, clip *clipboard, remoteMsg map[int]chan s
 
 // printServerClipboard sends a request to the server to print its internal
 // representation of the clipboard.
-func printServerClipboard() (string, error) {
-	sockfile, err := sockPath(sockFilename)
-	if err != nil {
-		return "", err
-	}
+func printServerClipboard(sockfile string) (string, error) {
 	buf := make([]byte, bufSize)
 	conn, err := net.Dial("unix", sockfile)
 	if err != nil {

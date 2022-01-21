@@ -57,25 +57,31 @@ func main() {
 	}
 	log.SetFormatter(logFormat)
 
+	// Used by multiple actions.
+	sockfile, err := sockPath(sockFilename)
+	if err != nil {
+		log.Fatalf("Unable to generate socket file name: %v", err)
+	}
+
 	switch k {
 	case pasteCmd.FullCommand():
-		contents, err := printServerClipboard()
+		contents, err := printServerClipboard(sockfile)
 		if err != nil {
 			log.Fatalf("Error requesting server clipboard: %v", err)
 		}
 		fmt.Print(contents)
 
 	case copyCmd.FullCommand():
-		if err = publishReader(os.Stdin, *copyCmdFilter); err != nil {
+		if err = publishReader(sockfile, os.Stdin, *copyCmdFilter); err != nil {
 			log.Fatalf("Error sending contents to clipboards: %v", err)
 		}
 
 	case serverCmd.FullCommand():
-		log.Fatalf("Server terminated abnormally: %v\n", server())
+		log.Fatalf("Server terminated abnormally: %v\n", server(sockfile))
 
 	case syncCmd.FullCommand():
 		log.Infof("Starting syncer.")
-		syncer()
+		syncer(sockfile)
 
 	case versionCmd.FullCommand():
 		fmt.Printf("Build Version: %s\n", BuildVersion)

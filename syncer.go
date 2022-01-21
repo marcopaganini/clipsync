@@ -16,12 +16,7 @@ const (
 )
 
 // publishToServer opens a socket to the server and publishes the contents.
-func publishToServer(contents string) error {
-	sockfile, err := sockPath(sockFilename)
-	if err != nil {
-		return err
-	}
-
+func publishToServer(sockfile string, contents string) error {
 	conn, err := net.Dial("unix", sockfile)
 	if err != nil {
 		log.Errorf("publishToServer: %v", err)
@@ -94,7 +89,7 @@ func subscribeToServer(sockfile string, clip *clipboard) {
 // publishClipboard periodically reads from this machine's clipboard and
 // updates the remote clipboard server when changes happen. This function
 // never returns.
-func publishClipboard(clip *clipboard) {
+func publishClipboard(sockfile string, clip *clipboard) {
 	log.Debugf("About to publishClipboard")
 	for {
 		xclipboard := readClipboard()
@@ -109,7 +104,7 @@ func publishClipboard(clip *clipboard) {
 		// Set in-memory clipboard and publish to server.
 		clip.set(xclipboard)
 		log.Debugf("publishClipboard: Got remote clipboard value: %s", xclipboard)
-		if err := publishToServer(xclipboard); err != nil {
+		if err := publishToServer(sockfile, xclipboard); err != nil {
 			log.Errorf("publishClipboard: Failed to set remote clipboard: %v", err)
 			time.Sleep(time.Second)
 			continue
@@ -123,7 +118,7 @@ func publishClipboard(clip *clipboard) {
 // local clipboard will be set by the syncer (running in another instance). If
 // 'filter' is set, the contents of the standard input are re-printed in the
 // standard output.
-func publishReader(r io.Reader, filter bool) error {
+func publishReader(sockfile string, r io.Reader, filter bool) error {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return err
@@ -133,7 +128,7 @@ func publishReader(r io.Reader, filter bool) error {
 	if filter {
 		fmt.Print(contents)
 	}
-	if err = publishToServer(contents); err != nil {
+	if err = publishToServer(sockfile, contents); err != nil {
 		return err
 	}
 	return nil
@@ -142,14 +137,10 @@ func publishReader(r io.Reader, filter bool) error {
 // syncer maintains the local clipboard synchronized with the remote server
 // clipboard. Subscribing to a server will sync the in-memory version of the
 // clipboard to that server.
-func syncer() {
+func syncer(sockfile string) {
 	lock := singleInstanceOrDie(syncerLockFile)
 	defer lock.Unlock()
 
-	sockfile, err := sockPath(sockFilename)
-	if err != nil {
-		log.Fatal(err)
-	}
 	clip := &clipboard{}
 	go subscribeToServer(sockfile, clip)
 
@@ -157,7 +148,7 @@ func syncer() {
 	// environment variable is set.
 	if os.Getenv("DISPLAY") != "" {
 		// Runs forever.
-		publishClipboard(clip)
+		publishClipboard(sockfile, clip)
 	}
 
 	// No DISPLAY, sleep forever

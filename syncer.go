@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"time"
+	"unicode/utf8"
 
 	backoff "github.com/cenkalti/backoff/v4"
 	log "github.com/sirupsen/logrus"
@@ -89,7 +90,13 @@ func subscribeToServer(sockfile string, clip *clipboard) {
 // publishClipboard periodically reads from this machine's clipboard and
 // updates the remote clipboard server when changes happen. This function
 // never returns.
-func publishClipboard(sockfile string, clip *clipboard) {
+//
+// If 'protect' is set, we activate "single char protection": Basically,
+// ignore the clipboard (and restore it from the last good known value)
+// if it contains only one character. This is a workaround to common bugs
+// in Linux (namely, chrome overwriting the clipboard when a composition
+// sequence is used.)
+func publishClipboard(sockfile string, clip *clipboard, protect bool) {
 	log.Debugf("About to publishClipboard")
 	for {
 		xclipboard := readClipboard()
@@ -98,6 +105,14 @@ func publishClipboard(sockfile string, clip *clipboard) {
 		// No changes, move on...
 		if value == xclipboard {
 			time.Sleep(time.Second)
+			continue
+		}
+
+		// Check for clipboard "one-character" protection.
+		if protect && utf8.RuneCountInString(xclipboard) == 1 {
+			if err := writeClipboard(value); err != nil {
+				log.Errorf("publishClipboard: Cannot re-write clipboard (one-char protection enabled): %v", err)
+			}
 			continue
 		}
 
@@ -137,7 +152,10 @@ func publishReader(sockfile string, r io.Reader, filter bool) error {
 // syncer maintains the local clipboard synchronized with the remote server
 // clipboard. Subscribing to a server will sync the in-memory version of the
 // clipboard to that server.
-func syncer(sockfile string) {
+//
+// If 'protect' is set, activate protection against single character clipboard
+// overrides.
+func syncer(sockfile string, protect bool) {
 	lock := singleInstanceOrDie(syncerLockFile)
 	defer lock.Unlock()
 
@@ -148,7 +166,7 @@ func syncer(sockfile string) {
 	// environment variable is set.
 	if os.Getenv("DISPLAY") != "" {
 		// Runs forever.
-		publishClipboard(sockfile, clip)
+		publishClipboard(sockfile, clip, protect)
 	}
 
 	// No DISPLAY, sleep forever

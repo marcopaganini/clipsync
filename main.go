@@ -34,7 +34,8 @@ func main() {
 
 		serverCmd = app.Command("server", "Run in server mode.")
 
-		syncCmd = app.Command("sync", "Connect to a server and sync clipboards.")
+		syncCmd        = app.Command("sync", "Connect to a server and sync clipboards.")
+		syncCmdProtect = syncCmd.Flag("no-single-char", "Protect clipboard against one-character copies.").Short('p').Bool()
 
 		versionCmd = app.Command("version", "Show version information.")
 
@@ -81,7 +82,7 @@ func main() {
 
 	case syncCmd.FullCommand():
 		log.Infof("Starting syncer.")
-		syncer(sockfile)
+		syncer(sockfile, *syncCmdProtect)
 
 	case versionCmd.FullCommand():
 		fmt.Printf("Build Version: %s\n", BuildVersion)

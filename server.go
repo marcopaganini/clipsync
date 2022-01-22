@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/fredli74/lockfile"
 	log "github.com/sirupsen/logrus"
@@ -20,6 +21,9 @@ import (
 
 const (
 	serverLockFile = "/var/run/lock/clipshare-server.lock"
+
+	// Timeout for accept, in seconds.
+	serverConnectionTimeout = 3
 )
 
 // sockPath returns the full path to the socket file.
@@ -121,14 +125,20 @@ func server(sockfile string) error {
 		buf := make([]byte, bufSize)
 
 		// Read command from client.
+		conn.SetDeadline(time.Now().Add(serverConnectionTimeout * time.Second))
 		nbytes, err := conn.Read(buf)
 		if err != nil {
-			if err == io.EOF {
+			switch {
+			case err == io.EOF:
 				log.Infof("Client closed socket.")
+				fallthrough
+			case os.IsTimeout(err):
+				log.Infof("Client timed out. Closing socket.")
 				conn.Close()
 				continue
+			default:
+				return fmt.Errorf("server: Error reading socket: %v", err)
 			}
-			return fmt.Errorf("server: Error reading socket: %v", err)
 		}
 		data := string(buf[0:nbytes])
 
@@ -156,6 +166,9 @@ func server(sockfile string) error {
 		case strings.HasPrefix(data, "SUB\n"):
 			log.Infof("server: Subscribe request received (id=%d). Waiting for updates.", id)
 			remoteMsg[id] = make(chan string)
+
+			// Reset connection deadline (SUB is a long standing connection).
+			conn.SetDeadline(time.Time{})
 			go subHandler(id, conn, clip, remoteMsg)
 			id++
 
@@ -173,6 +186,7 @@ func server(sockfile string) error {
 		// Unknown command.
 		default:
 			log.Errorf("server: Received unknown command: %q", data)
+			conn.Close()
 		}
 	}
 }

@@ -1,0 +1,11 @@
+[Unit]
+Description=Clipshare Syncer
+After=network.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/clipshare sync
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

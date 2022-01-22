@@ -1,0 +1,12 @@
+[Unit]
+Description=Clipshare Server
+After=network.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/clipshare server
+Restart=on-failure
+User=PUT_YOUR_USERNAME_HERE
+
+[Install]
+WantedBy=multi-user.target

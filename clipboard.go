@@ -8,6 +8,12 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// Clipboard Selection Types.
+const (
+	selPrimary   = "primary"
+	selClipboard = "clipboard"
+)
+
 type clipboard struct {
 	sync.RWMutex
 	value string
@@ -26,12 +32,12 @@ func (x *clipboard) get() string {
 	return v
 }
 
-// readClipboard returns the contents of the primary clipboard.
-func readClipboard() string {
+// readClipboard returns the contents of the chosen X selection.
+func readClipboard(sel string) string {
 	// xclip will return an error on an empty clipboard, but
 	// there's no portable way to fetch the return code. Being
 	// that the case, we'll just ignore those (TODO: Fix this).
-	xclip := exec.Command("xclip", "-o")
+	xclip := exec.Command("xclip", "-selection", sel, "-o")
 	out, err := xclip.Output()
 	if err != nil {
 		return ""
@@ -39,9 +45,9 @@ func readClipboard() string {
 	return string(out)
 }
 
-// writeClipboard sets the contents of the primary clipboard.
-func writeClipboard(contents string) error {
-	xclip := exec.Command("xclip")
+// writeClipboard sets the contents of the chosen X selection.
+func writeClipboard(contents string, sel string) error {
+	xclip := exec.Command("xclip", "-selection", sel, "-i")
 	stdin, err := xclip.StdinPipe()
 	if err != nil {
 		return err
@@ -54,6 +60,6 @@ func writeClipboard(contents string) error {
 	stdin.Close()
 	xclip.Wait()
 
-	log.Debugf("writeClipboard: Set clipboard to %s", contents)
+	log.Debugf("writeClipboard: Set clipboard(%s) to %s", sel, contents)
 	return nil
 }

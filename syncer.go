@@ -75,7 +75,7 @@ func subscribeToServer(sockfile string, clip *clipboard) {
 			if data != value {
 				clip.set(data)
 				if os.Getenv("DISPLAY") != "" {
-					if err = writeClipboard(data); err != nil {
+					if err = writeClipboard(data, selPrimary); err != nil {
 						log.Errorf("subcribeToServer: Unable to set local clipboard: %v", err)
 					}
 				}
@@ -99,7 +99,7 @@ func subscribeToServer(sockfile string, clip *clipboard) {
 func publishClipboard(sockfile string, clip *clipboard, protect bool) {
 	log.Debugf("About to publishClipboard")
 	for {
-		xclipboard := readClipboard()
+		xclipboard := readClipboard(selPrimary)
 		value := clip.get()
 
 		// No changes, move on...
@@ -110,7 +110,7 @@ func publishClipboard(sockfile string, clip *clipboard, protect bool) {
 
 		// Check for clipboard "one-character" protection.
 		if protect && utf8.RuneCountInString(xclipboard) == 1 {
-			if err := writeClipboard(value); err != nil {
+			if err := writeClipboard(value, selPrimary); err != nil {
 				log.Errorf("publishClipboard: Cannot re-write clipboard (one-char protection enabled): %v", err)
 			}
 			continue

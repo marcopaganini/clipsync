@@ -8,4 +8,4 @@ ExecStart=/usr/local/bin/clips sync
 Restart=on-failure
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

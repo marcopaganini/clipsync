@@ -14,39 +14,39 @@ const (
 	selClipboard = "clipboard"
 )
 
-type clipboard struct {
+type selection struct {
 	sync.RWMutex
 	primary   string
 	clipboard string
 }
 
-func (x *clipboard) setPrimary(value string) {
+func (x *selection) setPrimary(value string) {
 	x.Lock()
 	x.primary = value
 	x.Unlock()
 }
 
-func (x *clipboard) setClipboard(value string) {
+func (x *selection) setClipboard(value string) {
 	x.Lock()
 	x.clipboard = value
 	x.Unlock()
 }
 
-func (x *clipboard) getPrimary() string {
+func (x *selection) getPrimary() string {
 	x.Lock()
 	v := x.primary
 	x.Unlock()
 	return v
 }
-func (x *clipboard) getClipboard() string {
+func (x *selection) getClipboard() string {
 	x.Lock()
 	v := x.clipboard
 	x.Unlock()
 	return v
 }
 
-// readClipboard returns the contents of the chosen X selection.
-func readClipboard(sel string) string {
+// readSelection returns the contents of the chosen X selection.
+func readSelection(sel string) string {
 	// xclip will return an error on an empty clipboard, but
 	// there's no portable way to fetch the return code. Being
 	// that the case, we'll just ignore those (TODO: Fix this).
@@ -58,8 +58,8 @@ func readClipboard(sel string) string {
 	return string(out)
 }
 
-// writeClipboard sets the contents of the chosen X selection.
-func writeClipboard(contents string, sel string) error {
+// writeSelection sets the contents of the chosen X selection.
+func writeSelection(contents string, sel string) error {
 	xclip := exec.Command("xclip", "-selection", sel, "-i")
 	stdin, err := xclip.StdinPipe()
 	if err != nil {
@@ -73,6 +73,6 @@ func writeClipboard(contents string, sel string) error {
 	stdin.Close()
 	xclip.Wait()
 
-	log.Debugf("writeClipboard: Set clipboard(%s) to %s", sel, contents)
+	log.Debugf("writeSelection: Set selection(%s) to %s", sel, contents)
 	return nil
 }

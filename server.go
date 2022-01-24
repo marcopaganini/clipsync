@@ -92,13 +92,13 @@ func sigTermHandler(listen net.Listener) {
 	}(listen, sig)
 }
 
-// server starts a local server for read/write operations to the clipboard file.
+// server starts a local clipboard server.
 func server(sockfile string) error {
 	lock := singleInstanceOrDie(serverLockFile)
 	defer lock.Unlock()
 
-	// clip holds the contents of the clipboard for get/set operations.
-	clip := &clipboard{}
+	// sel holds the contents of the primary selection for get/set operations.
+	sel := &selection{}
 
 	listen, err := socketListen(sockfile)
 	if err != nil {
@@ -143,21 +143,21 @@ func server(sockfile string) error {
 		data := string(buf[0:nbytes])
 
 		switch {
-		// Publish Request: set the current clipboard to the value read from the
-		// socket and broadcast it to all other connections. Close the connection
-		// afterwards.
+		// Publish Request: set the current primary selection to the value read
+		// from the socket and broadcast it to all other connections. Close the
+		// connection afterwards.
 		case strings.HasPrefix(data, "PUB\n"):
 			log.Infof("server: Publish request received.")
 			log.Debugf("server: Received value: %q", data)
 
-			// Update in-memory clipboard.
+			// Update in-memory primary selection.
 			data = data[4:nbytes]
-			clip.setPrimary(data)
+			sel.setPrimary(data)
 
 			// Update all other instances.
 			for k, c := range remoteMsg {
 				log.Debugf("server: Updating handler id %d", k)
-				c <- clip.getPrimary()
+				c <- sel.getPrimary()
 			}
 
 			log.Debugf("server: Closing connection after PUB command.")
@@ -169,14 +169,14 @@ func server(sockfile string) error {
 
 			// Reset connection deadline (SUB is a long standing connection).
 			conn.SetDeadline(time.Time{})
-			go subHandler(id, conn, clip, remoteMsg)
+			go subHandler(id, conn, sel, remoteMsg)
 			id++
 
-		// Print the in-memory clipboard and exit.
+		// Print the in-memory primary selection and exit.
 		case strings.HasPrefix(data, "PRINT\n"):
 			log.Infof("server: Print request received.")
 
-			_, err := conn.Write([]byte(clip.getPrimary()))
+			_, err := conn.Write([]byte(sel.getPrimary()))
 			if err != nil {
 				log.Errorf("server: Error writing socket: %v", err)
 			}
@@ -194,20 +194,21 @@ func server(sockfile string) error {
 // subHandler handles SUB requests.
 //
 // For every new connection with a SUB request, server() calls this function
-// with a numeric unique id, a new connection, a copy of the in-memory
-// clipboard, and a map of string channels, keyed by id.
+// with a numeric unique id, a new connection, a copy of the in-memory primary
+// selection, and a map of string channels, keyed by id.
 //
-// This function will send the current state of the clipboard and wait forever
-// on remoteMsg, writing to the socket any messages published by other clients.
-func subHandler(id int, conn net.Conn, clip *clipboard, remoteMsg map[int]chan string) {
+// This function will send the current state of the primary selection and wait
+// forever on remoteMsg, writing to the socket any messages published by other
+// clients.
+func subHandler(id int, conn net.Conn, clip *selection, remoteMsg map[int]chan string) {
 	log.Debugf("subHandler(%d): Starting.", id)
 
-	// Subscribe request: Print the initial value of the memory clipboard and
-	// every change from this point on. We expect clients to read forever on
-	// this socket.
+	// Subscribe request: Print the initial value of the in-memory primary
+	// selection and every change from this point on. We expect clients to read
+	// forever on this socket.
 
-	// Send initial clipboard contents.
-	log.Debugf("subHandler(%d): Initial send of memory clipboard contents.", id)
+	// Send initial primary selection contents.
+	log.Debugf("subHandler(%d): Initial send of in-memory primary selection contents.", id)
 	_, err := conn.Write([]byte(clip.getPrimary()))
 	if err != nil {
 		log.Errorf("subHandler(%d): Error writing socket: %v", id, err)

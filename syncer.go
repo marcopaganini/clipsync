@@ -32,9 +32,9 @@ func publishToServer(sockfile string, contents string) error {
 }
 
 // subscribeToServer constantly reads from the server and updates the in-memory
-// clipboard, and the local (if DISPLAY is set) with any changes reported by
+// selection, and the local (if DISPLAY is set) with any changes reported by
 // the remote.
-func subscribeToServer(sockfile string, clip *clipboard) {
+func subscribeToServer(sockfile string, sel *selection) {
 	for {
 		// Create connection.
 		buf := make([]byte, bufSize)
@@ -70,13 +70,13 @@ func subscribeToServer(sockfile string, clip *clipboard) {
 				break
 			}
 			data := string(buf[0:nbytes])
-			value := clip.getPrimary()
-			log.Debugf("subscribeToServer: Received %q, current memory clipboard: %q", data, value)
+			value := sel.getPrimary()
+			log.Debugf("subscribeToServer: Received %q, current memory primary selection: %q", data, value)
 			if data != value {
-				clip.setPrimary(data)
+				sel.setPrimary(data)
 				if os.Getenv("DISPLAY") != "" {
-					if err = writeClipboard(data, selPrimary); err != nil {
-						log.Errorf("subcribeToServer: Unable to set local clipboard: %v", err)
+					if err = writeSelection(data, selPrimary); err != nil {
+						log.Errorf("subcribeToServer: Unable to set local primary selection: %v", err)
 					}
 				}
 			}
@@ -87,30 +87,29 @@ func subscribeToServer(sockfile string, clip *clipboard) {
 	}
 }
 
-// publishClipboard periodically reads from this machine's clipboard and
-// updates the remote clipboard server when changes happen. This function
+// publishSelection periodically reads from this machine's primary selection
+// and updates the remote clipboard server when changes happen. This function
 // never returns.
 //
 // If 'protect' is set, we activate "single character protection": Basically,
 // ignore the clipboard (and restore it from the last good known value) if it
-// contains only one character. This is a workaround to common bugs in Linux
-// (namely, chrome overwriting the clipboard when a composition sequence is
-// used.)
-func publishClipboard(sockfile string, clip *clipboard, protect bool, both bool) {
-	log.Debugf("About to publishClipboard.")
+// contains only one character. This is a workaround to a bugs in Chrome Linux
+// (chrome overwrites the primary selection with one character when a
+// composition sequence is used.)
+func publishSelection(sockfile string, sel *selection, protect bool, both bool) {
 	for {
-		xprimary := readClipboard(selPrimary)
-		xclipboard := readClipboard(selClipboard)
+		xprimary := readSelection(selPrimary)
+		xclipboard := readSelection(selClipboard)
 
-		memPrimary := clip.getPrimary()
-		memClipboard := clip.getClipboard()
+		memPrimary := sel.getPrimary()
+		memClipboard := sel.getClipboard()
 
 		// Restore the primary selection to the saved value if it contains
-		// a single character and 'protect' is set.
+		// a single rune and 'protect' is set.
 		if protect && utf8.RuneCountInString(xprimary) == 1 {
 			xprimary = memPrimary
-			if err := writeClipboard(memPrimary, selPrimary); err != nil {
-				log.Errorf("publishClipboard: Cannot write to primary selection: %v", err)
+			if err := writeSelection(memPrimary, selPrimary); err != nil {
+				log.Errorf("publishSelection: Cannot write to primary selection: %v", err)
 			}
 		}
 
@@ -119,16 +118,16 @@ func publishClipboard(sockfile string, clip *clipboard, protect bool, both bool)
 			// clipboard changed, sync to primary.
 			if xclipboard != memClipboard {
 				xprimary = xclipboard
-				clip.setPrimary(xclipboard)
-				clip.setClipboard(xclipboard)
-				if err := writeClipboard(xclipboard, selPrimary); err != nil {
-					log.Errorf("publishClipboard: Cannot write to primary selection: %v", err)
+				sel.setPrimary(xclipboard)
+				sel.setClipboard(xclipboard)
+				if err := writeSelection(xclipboard, selPrimary); err != nil {
+					log.Errorf("publishSelection: Cannot write to primary selection: %v", err)
 				}
 			} else if xprimary != memPrimary {
 				// primary changed, sync to clipboard.
-				clip.setClipboard(xprimary)
-				if err := writeClipboard(xprimary, selClipboard); err != nil {
-					log.Errorf("publishClipboard: Cannot write to clipboard: %v", err)
+				sel.setClipboard(xprimary)
+				if err := writeSelection(xprimary, selClipboard); err != nil {
+					log.Errorf("publishSelection: Cannot write to clipboard: %v", err)
 				}
 			}
 		}
@@ -139,11 +138,11 @@ func publishClipboard(sockfile string, clip *clipboard, protect bool, both bool)
 			continue
 		}
 
-		// Set in-memory clipboard and publish to server.
-		clip.setPrimary(xprimary)
-		log.Debugf("publishClipboard: Got remote clipboard value: %s", xprimary)
+		// Set in-memory primary selection and publish to server.
+		sel.setPrimary(xprimary)
+		log.Debugf("publishSelection: Got remote clipboard value: %s", xprimary)
 		if err := publishToServer(sockfile, xprimary); err != nil {
-			log.Errorf("publishClipboard: Failed to set remote clipboard: %v", err)
+			log.Errorf("publishSelection: Failed to set remote clipboard: %v", err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -153,9 +152,9 @@ func publishClipboard(sockfile string, clip *clipboard, protect bool, both bool)
 }
 
 // publishReader sends the contents of the io.Reader to all clipboards. The
-// local clipboard will be set by the syncer (running in another instance). If
-// 'filter' is set, the contents of the standard input are re-printed in the
-// standard output.
+// local primary selection will be set by the syncer (running in another
+// instance). If 'filter' is set, the contents of the standard input are
+// re-printed in the standard output.
 func publishReader(sockfile string, r io.Reader, filter bool) error {
 	data, err := io.ReadAll(r)
 	if err != nil {
@@ -172,28 +171,25 @@ func publishReader(sockfile string, r io.Reader, filter bool) error {
 	return nil
 }
 
-// syncer maintains the local clipboard synchronized with the remote server
-// clipboard. Subscribing to a server will sync the in-memory version of the
-// clipboard to that server.
-//
-// If 'protect' is set, activate protection against single character clipboard
-// overrides.
+// syncer maintains the local primary selection synchronized with the remote
+// server clipboard. Subscribing to a server will sync the in-memory version of
+// the primary selection to that server.
 func syncer(sockfile string, protect bool, both bool) {
 	lock := singleInstanceOrDie(syncerLockFile)
 	defer lock.Unlock()
 
-	clip := &clipboard{}
-	go subscribeToServer(sockfile, clip)
+	sel := &selection{}
+	go subscribeToServer(sockfile, sel)
 
-	// Only attempt to sync the local (machine) clipboard if the DISPLAY
+	// Only attempt to sync the local (machine) primary selection if the DISPLAY
 	// environment variable is set.
 	if os.Getenv("DISPLAY") != "" {
 		// Runs forever.
-		publishClipboard(sockfile, clip, protect, both)
+		publishSelection(sockfile, sel, protect, both)
 	}
 
 	// No DISPLAY, sleep forever
-	log.Debugf("syncer: DISPLAY variable is not set. Won't set X's clipboard. Sleeping forever.")
+	log.Debugf("syncer: DISPLAY variable is not set. Won't set X selection. Sleeping forever.")
 	for {
 		time.Sleep(1e9 * time.Second)
 	}

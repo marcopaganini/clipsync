@@ -1,4 +1,7 @@
-// clipboard.go - Clipboard related data structures and functions.
+// selection.go - Clipboard related data structures and functions.
+//
+// This file is part of clipshare (C)2022 by Marco Paganini
+// Please see http://github.com/marcopaganini/clipshare for details.
 package main
 
 import (

@@ -147,8 +147,8 @@ func server(sockfile string) error {
 		// from the socket and broadcast it to all other connections. Close the
 		// connection afterwards.
 		case strings.HasPrefix(data, "PUB\n"):
-			log.Infof("server: Publish request received.")
-			log.Debugf("server: Received value: %q", data)
+			log.Infof("Publish request received.")
+			log.Debugf("Received value: %q", data)
 
 			// Update in-memory primary selection.
 			data = data[4:nbytes]
@@ -156,15 +156,15 @@ func server(sockfile string) error {
 
 			// Update all other instances.
 			for k, c := range remoteMsg {
-				log.Debugf("server: Updating handler id %d", k)
+				log.Debugf("Updating handler id %d", k)
 				c <- sel.getPrimary()
 			}
 
-			log.Debugf("server: Closing connection after PUB command.")
+			log.Debugf("Closing connection after PUB command.")
 			conn.Close()
 
 		case strings.HasPrefix(data, "SUB\n"):
-			log.Infof("server: Subscribe request received (id=%d). Waiting for updates.", id)
+			log.Infof("Subscribe request received (id=%d). Waiting for updates.", id)
 			remoteMsg[id] = make(chan string)
 
 			// Reset connection deadline (SUB is a long standing connection).
@@ -174,18 +174,18 @@ func server(sockfile string) error {
 
 		// Print the in-memory primary selection and exit.
 		case strings.HasPrefix(data, "PRINT\n"):
-			log.Infof("server: Print request received.")
+			log.Infof("Print request received.")
 
 			_, err := conn.Write([]byte(sel.getPrimary()))
 			if err != nil {
-				log.Errorf("server: Error writing socket: %v", err)
+				log.Errorf("Error writing socket: %v", err)
 			}
-			log.Debugf("serve: Closing connection after PRINT command.")
+			log.Debugf("Closing connection after PRINT command.")
 			conn.Close()
 
 		// Unknown command.
 		default:
-			log.Errorf("server: Received unknown command: %q", data)
+			log.Errorf("Received unknown command: %q", data)
 			conn.Close()
 		}
 	}
@@ -201,26 +201,26 @@ func server(sockfile string) error {
 // forever on remoteMsg, writing to the socket any messages published by other
 // clients.
 func subHandler(id int, conn net.Conn, clip *selection, remoteMsg map[int]chan string) {
-	log.Debugf("subHandler(%d): Starting.", id)
+	log.Debugf("Handler %d: Starting.", id)
 
 	// Subscribe request: Print the initial value of the in-memory primary
 	// selection and every change from this point on. We expect clients to read
 	// forever on this socket.
 
 	// Send initial primary selection contents.
-	log.Debugf("subHandler(%d): Initial send of in-memory primary selection contents.", id)
+	log.Debugf("Handler %d: Initial send of in-memory primary selection contents.", id)
 	_, err := conn.Write([]byte(clip.getPrimary()))
 	if err != nil {
-		log.Errorf("subHandler(%d): Error writing socket: %v", id, err)
+		log.Errorf("Handler %d: Error writing socket: %v", id, err)
 	}
 
 	for {
 		// Wait for updates to my id in the map of channels.
 		contents := <-remoteMsg[id]
-		log.Debugf("subHandler(%d): Got update request for %s", id, contents)
+		log.Debugf("Handler %d: Got update request for %s", id, contents)
 		_, err := conn.Write([]byte(contents))
 		if err != nil {
-			log.Errorf("subHandler(%d): Error writing socket: %v", id, err)
+			log.Errorf("Handler %d: Error writing socket: %v", id, err)
 			break
 		}
 	}
@@ -235,19 +235,19 @@ func printServerClipboard(sockfile string) (string, error) {
 	buf := make([]byte, bufSize)
 	conn, err := net.Dial("unix", sockfile)
 	if err != nil {
-		log.Errorf("printServerClipboard: %v", err)
+		log.Error(err)
 		return "", err
 	}
 	if _, err := fmt.Fprintf(conn, "PRINT\n"); err != nil {
-		log.Errorf("printServerClipboard: Error writing to socket: %v", err)
+		log.Errorf("Error writing to socket: %v", err)
 	}
 	// Read one record and print it.
 	nbytes, err := conn.Read(buf)
 	if err != nil {
 		if err == io.EOF {
-			log.Infof("printServerClipboard: Connection closed by server.")
+			log.Infof("Connection closed by server.")
 		} else {
-			log.Errorf("printServerClipboard: Error reading socket: %v", err)
+			log.Errorf("Error reading socket: %v", err)
 		}
 		return "", err
 	}

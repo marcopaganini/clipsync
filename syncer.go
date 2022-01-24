@@ -49,14 +49,14 @@ func subscribeToServer(sockfile string, sel *selection) {
 
 			conn, err = net.Dial("unix", sockfile)
 			if err != nil {
-				log.Errorf("subcribeToServer: %v", err)
+				log.Error(err)
 				return err
 			}
-			log.Infof("subcribeToServer: Connected to %s", sockfile)
+			log.Infof("Connected to %s", sockfile)
 
 			// Send Subscribe command.
 			if _, err = fmt.Fprintln(conn, "SUB"); err != nil {
-				log.Infof("subscribeToServer: Error writing to socket: %v\n", err)
+				log.Infof("Error writing to socket: %v\n", err)
 				return err
 			}
 			return nil
@@ -66,22 +66,22 @@ func subscribeToServer(sockfile string, sel *selection) {
 		for {
 			nbytes, err := conn.Read(buf[:])
 			if err != nil {
-				log.Errorf("subcribeToServer: Error reading socket: %v", err)
+				log.Errorf("Error reading socket: %v", err)
 				break
 			}
 			data := string(buf[0:nbytes])
 			value := sel.getPrimary()
-			log.Debugf("subscribeToServer: Received %q, current memory primary selection: %q", data, value)
+			log.Debugf("Received %q, current memory primary selection: %q", data, value)
 			if data != value {
 				sel.setPrimary(data)
 				if os.Getenv("DISPLAY") != "" {
 					if err = writeSelection(data, selPrimary); err != nil {
-						log.Errorf("subcribeToServer: Unable to set local primary selection: %v", err)
+						log.Errorf("Unable to set local primary selection: %v", err)
 					}
 				}
 			}
 		}
-		log.Debugf("subscribeToServer: Closing connection.")
+		log.Debugf("Closing connection.")
 		conn.Close()
 		time.Sleep(3 * time.Second)
 	}
@@ -109,7 +109,7 @@ func publishSelection(sockfile string, sel *selection, protect bool, both bool) 
 		if protect && utf8.RuneCountInString(xprimary) == 1 {
 			xprimary = memPrimary
 			if err := writeSelection(memPrimary, selPrimary); err != nil {
-				log.Errorf("publishSelection: Cannot write to primary selection: %v", err)
+				log.Errorf("Cannot write to primary selection: %v", err)
 			}
 		}
 
@@ -121,13 +121,13 @@ func publishSelection(sockfile string, sel *selection, protect bool, both bool) 
 				sel.setPrimary(xclipboard)
 				sel.setClipboard(xclipboard)
 				if err := writeSelection(xclipboard, selPrimary); err != nil {
-					log.Errorf("publishSelection: Cannot write to primary selection: %v", err)
+					log.Errorf("Cannot write to primary selection: %v", err)
 				}
 			} else if xprimary != memPrimary {
 				// primary changed, sync to clipboard.
 				sel.setClipboard(xprimary)
 				if err := writeSelection(xprimary, selClipboard); err != nil {
-					log.Errorf("publishSelection: Cannot write to clipboard: %v", err)
+					log.Errorf("Cannot write to clipboard: %v", err)
 				}
 			}
 		}
@@ -140,9 +140,9 @@ func publishSelection(sockfile string, sel *selection, protect bool, both bool) 
 
 		// Set in-memory primary selection and publish to server.
 		sel.setPrimary(xprimary)
-		log.Debugf("publishSelection: Got remote clipboard value: %s", xprimary)
+		log.Debugf("Got remote clipboard value: %s", xprimary)
 		if err := publishToServer(sockfile, xprimary); err != nil {
-			log.Errorf("publishSelection: Failed to set remote clipboard: %v", err)
+			log.Errorf("Failed to set remote clipboard: %v", err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -189,7 +189,7 @@ func syncer(sockfile string, protect bool, both bool) {
 	}
 
 	// No DISPLAY, sleep forever
-	log.Debugf("syncer: DISPLAY variable is not set. Won't set X selection. Sleeping forever.")
+	log.Debugf("DISPLAY variable is not set. Won't set X selection. Sleeping forever.")
 	for {
 		time.Sleep(1e9 * time.Second)
 	}

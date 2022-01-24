@@ -4,6 +4,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 
 	log "github.com/sirupsen/logrus"
 
@@ -49,10 +51,15 @@ func main() {
 	// Log formatting options.
 	if *optVerbose {
 		log.SetLevel(log.DebugLevel)
+		log.SetReportCaller(true)
 	}
 	logFormat := &log.TextFormatter{
 		FullTimestamp:          true,
 		DisableLevelTruncation: true,
+		CallerPrettyfier: func(f *runtime.Frame) (string, string) {
+			_, filename := filepath.Split(f.File)
+			return fmt.Sprintf("%s()", f.Function), fmt.Sprintf("%s:%d", filename, f.Line)
+		},
 	}
 	if *optNocolors {
 		logFormat.DisableColors = true

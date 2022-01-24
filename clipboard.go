@@ -73,6 +73,6 @@ func writeSelection(contents string, sel string) error {
 	stdin.Close()
 	xclip.Wait()
 
-	log.Debugf("writeSelection: Set selection(%s) to %s", sel, contents)
+	log.Debugf("Set selection(%s) to %s", sel, contents)
 	return nil
 }

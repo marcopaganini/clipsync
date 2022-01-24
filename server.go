@@ -152,12 +152,12 @@ func server(sockfile string) error {
 
 			// Update in-memory clipboard.
 			data = data[4:nbytes]
-			clip.set(data)
+			clip.setPrimary(data)
 
 			// Update all other instances.
 			for k, c := range remoteMsg {
 				log.Debugf("server: Updating handler id %d", k)
-				c <- clip.get()
+				c <- clip.getPrimary()
 			}
 
 			log.Debugf("server: Closing connection after PUB command.")
@@ -176,7 +176,7 @@ func server(sockfile string) error {
 		case strings.HasPrefix(data, "PRINT\n"):
 			log.Infof("server: Print request received.")
 
-			_, err := conn.Write([]byte(clip.get()))
+			_, err := conn.Write([]byte(clip.getPrimary()))
 			if err != nil {
 				log.Errorf("server: Error writing socket: %v", err)
 			}
@@ -208,7 +208,7 @@ func subHandler(id int, conn net.Conn, clip *clipboard, remoteMsg map[int]chan s
 
 	// Send initial clipboard contents.
 	log.Debugf("subHandler(%d): Initial send of memory clipboard contents.", id)
-	_, err := conn.Write([]byte(clip.get()))
+	_, err := conn.Write([]byte(clip.getPrimary()))
 	if err != nil {
 		log.Errorf("subHandler(%d): Error writing socket: %v", id, err)
 	}

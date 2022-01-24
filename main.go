@@ -36,6 +36,7 @@ func main() {
 
 		syncCmd        = app.Command("sync", "Connect to a server and sync clipboards.")
 		syncCmdProtect = syncCmd.Flag("no-single-char", "Protect clipboard against one-character copies.").Short('p').Bool()
+		syncCmdBoth    = syncCmd.Flag("both", "Synchonize primary (middle mouse) and clipboard (Ctrl-C/V).").Short('2').Bool()
 
 		versionCmd = app.Command("version", "Show version information.")
 
@@ -82,7 +83,7 @@ func main() {
 
 	case syncCmd.FullCommand():
 		log.Infof("Starting syncer.")
-		syncer(sockfile, *syncCmdProtect)
+		syncer(sockfile, *syncCmdProtect, *syncCmdBoth)
 
 	case versionCmd.FullCommand():
 		fmt.Printf("Build Version: %s\n", BuildVersion)

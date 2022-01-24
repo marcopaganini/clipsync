@@ -16,18 +16,31 @@ const (
 
 type clipboard struct {
 	sync.RWMutex
-	value string
+	primary   string
+	clipboard string
 }
 
-func (x *clipboard) set(value string) {
+func (x *clipboard) setPrimary(value string) {
 	x.Lock()
-	x.value = value
+	x.primary = value
 	x.Unlock()
 }
 
-func (x *clipboard) get() string {
+func (x *clipboard) setClipboard(value string) {
 	x.Lock()
-	v := x.value
+	x.clipboard = value
+	x.Unlock()
+}
+
+func (x *clipboard) getPrimary() string {
+	x.Lock()
+	v := x.primary
+	x.Unlock()
+	return v
+}
+func (x *clipboard) getClipboard() string {
+	x.Lock()
+	v := x.clipboard
 	x.Unlock()
 	return v
 }

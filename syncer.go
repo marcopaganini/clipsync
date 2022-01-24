@@ -70,10 +70,10 @@ func subscribeToServer(sockfile string, clip *clipboard) {
 				break
 			}
 			data := string(buf[0:nbytes])
-			value := clip.get()
+			value := clip.getPrimary()
 			log.Debugf("subscribeToServer: Received %q, current memory clipboard: %q", data, value)
 			if data != value {
-				clip.set(data)
+				clip.setPrimary(data)
 				if os.Getenv("DISPLAY") != "" {
 					if err = writeClipboard(data, selPrimary); err != nil {
 						log.Errorf("subcribeToServer: Unable to set local clipboard: %v", err)
@@ -81,7 +81,7 @@ func subscribeToServer(sockfile string, clip *clipboard) {
 				}
 			}
 		}
-		log.Debugf("subscribeToServer: Closing connection")
+		log.Debugf("subscribeToServer: Closing connection.")
 		conn.Close()
 		time.Sleep(3 * time.Second)
 	}
@@ -91,35 +91,58 @@ func subscribeToServer(sockfile string, clip *clipboard) {
 // updates the remote clipboard server when changes happen. This function
 // never returns.
 //
-// If 'protect' is set, we activate "single char protection": Basically,
-// ignore the clipboard (and restore it from the last good known value)
-// if it contains only one character. This is a workaround to common bugs
-// in Linux (namely, chrome overwriting the clipboard when a composition
-// sequence is used.)
-func publishClipboard(sockfile string, clip *clipboard, protect bool) {
-	log.Debugf("About to publishClipboard")
+// If 'protect' is set, we activate "single character protection": Basically,
+// ignore the clipboard (and restore it from the last good known value) if it
+// contains only one character. This is a workaround to common bugs in Linux
+// (namely, chrome overwriting the clipboard when a composition sequence is
+// used.)
+func publishClipboard(sockfile string, clip *clipboard, protect bool, both bool) {
+	log.Debugf("About to publishClipboard.")
 	for {
-		xclipboard := readClipboard(selPrimary)
-		value := clip.get()
+		xprimary := readClipboard(selPrimary)
+		xclipboard := readClipboard(selClipboard)
 
-		// No changes, move on...
-		if value == xclipboard {
+		memPrimary := clip.getPrimary()
+		memClipboard := clip.getClipboard()
+
+		// Restore the primary selection to the saved value if it contains
+		// a single character and 'protect' is set.
+		if protect && utf8.RuneCountInString(xprimary) == 1 {
+			xprimary = memPrimary
+			if err := writeClipboard(memPrimary, selPrimary); err != nil {
+				log.Errorf("publishClipboard: Cannot write to primary selection: %v", err)
+			}
+		}
+
+		// Sync primary and clipboard, if requested.
+		if both {
+			// clipboard changed, sync to primary.
+			if xclipboard != memClipboard {
+				xprimary = xclipboard
+				clip.setPrimary(xclipboard)
+				clip.setClipboard(xclipboard)
+				if err := writeClipboard(xclipboard, selPrimary); err != nil {
+					log.Errorf("publishClipboard: Cannot write to primary selection: %v", err)
+				}
+			} else if xprimary != memPrimary {
+				// primary changed, sync to clipboard.
+				clip.setClipboard(xprimary)
+				if err := writeClipboard(xprimary, selClipboard); err != nil {
+					log.Errorf("publishClipboard: Cannot write to clipboard: %v", err)
+				}
+			}
+		}
+
+		// Don't publish if there are no changes.
+		if memPrimary == xprimary {
 			time.Sleep(time.Second)
 			continue
 		}
 
-		// Check for clipboard "one-character" protection.
-		if protect && utf8.RuneCountInString(xclipboard) == 1 {
-			if err := writeClipboard(value, selPrimary); err != nil {
-				log.Errorf("publishClipboard: Cannot re-write clipboard (one-char protection enabled): %v", err)
-			}
-			continue
-		}
-
 		// Set in-memory clipboard and publish to server.
-		clip.set(xclipboard)
-		log.Debugf("publishClipboard: Got remote clipboard value: %s", xclipboard)
-		if err := publishToServer(sockfile, xclipboard); err != nil {
+		clip.setPrimary(xprimary)
+		log.Debugf("publishClipboard: Got remote clipboard value: %s", xprimary)
+		if err := publishToServer(sockfile, xprimary); err != nil {
 			log.Errorf("publishClipboard: Failed to set remote clipboard: %v", err)
 			time.Sleep(time.Second)
 			continue
@@ -155,7 +178,7 @@ func publishReader(sockfile string, r io.Reader, filter bool) error {
 //
 // If 'protect' is set, activate protection against single character clipboard
 // overrides.
-func syncer(sockfile string, protect bool) {
+func syncer(sockfile string, protect bool, both bool) {
 	lock := singleInstanceOrDie(syncerLockFile)
 	defer lock.Unlock()
 
@@ -166,7 +189,7 @@ func syncer(sockfile string, protect bool) {
 	// environment variable is set.
 	if os.Getenv("DISPLAY") != "" {
 		// Runs forever.
-		publishClipboard(sockfile, clip, protect)
+		publishClipboard(sockfile, clip, protect, both)
 	}
 
 	// No DISPLAY, sleep forever

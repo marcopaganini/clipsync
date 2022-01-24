@@ -1,10 +1,10 @@
 [Unit]
-Description=Clipshare Syncer
+Description=Clipboard Sync Client
 After=network.target
 
 [Service]
 Type=exec
-ExecStart=/usr/local/bin/clipshare sync
+ExecStart=/usr/local/bin/clips sync
 Restart=on-failure
 
 [Install]

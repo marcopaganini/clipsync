@@ -1,4 +1,4 @@
-module clipshare
+module clipsync
 
 go 1.17
 

@@ -1,6 +1,9 @@
+# This file is part of clipsync (C)2022 by Marco Paganini
+# Please see http://github.com/marcopaganini/clipsync for details.
+
 .PHONY: arch clean install
 
-bin := clipshare
+bin := clips
 bindir := /usr/local/bin
 archdir := arch
 src := $(wildcard *.go)

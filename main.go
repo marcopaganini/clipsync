@@ -1,4 +1,7 @@
-// clipshare - clipboard sharing in go.
+// clipsync - Synchronize clipboard across machines.
+//
+// This file is part of clipsync (C)2022 by Marco Paganini
+// Please see http://github.com/marcopaganini/clipsync for details.
 package main
 
 import (
@@ -13,7 +16,7 @@ import (
 )
 
 const (
-	sockFilename = ".clipshare.sock"
+	sockFilename = ".clipsync.sock"
 
 	// bufSize for socket reads.
 	bufSize = 32 * 1024 * 1024
@@ -25,7 +28,7 @@ var BuildVersion string
 
 func main() {
 	var (
-		app         = kingpin.New("clipshare", "Clipboard sharing across machines.")
+		app         = kingpin.New("clipsync", "Sync clipboard across machines")
 		optNocolors = app.Flag("no-colors", "Verbose mode.").Bool()
 		optVerbose  = app.Flag("verbose", "Verbose mode.").Short('v').Bool()
 
@@ -36,9 +39,9 @@ func main() {
 
 		serverCmd = app.Command("server", "Run in server mode.")
 
-		syncCmd        = app.Command("sync", "Connect to a server and sync clipboards.")
-		syncCmdProtect = syncCmd.Flag("no-single-char", "Protect clipboard against one-character copies.").Short('p').Bool()
-		syncCmdBoth    = syncCmd.Flag("both", "Synchonize primary (middle mouse) and clipboard (Ctrl-C/V).").Short('2').Bool()
+		clientCmd            = app.Command("client", "Connect to a server and sync clipboards.")
+		clientCmdChromeQuirk = clientCmd.Flag("fix-chrome-quirk", "Protect clipboard against one-character copies.").Bool()
+		clientCmdSyncSel     = clientCmd.Flag("sync-selections", "Synchonize primary (middle mouse) and clipboard (Ctrl-C/V).").Short('s').Bool()
 
 		versionCmd = app.Command("version", "Show version information.")
 
@@ -86,11 +89,11 @@ func main() {
 		}
 
 	case serverCmd.FullCommand():
-		log.Fatalf("Server terminated abnormally: %v\n", server(sockfile))
+		log.Fatalf("Server terminated abnormally: %v", server(sockfile))
 
-	case syncCmd.FullCommand():
-		log.Infof("Starting syncer.")
-		syncer(sockfile, *syncCmdProtect, *syncCmdBoth)
+	case clientCmd.FullCommand():
+		log.Infof("Starting client.")
+		client(sockfile, *clientCmdChromeQuirk, *clientCmdSyncSel)
 
 	case versionCmd.FullCommand():
 		fmt.Printf("Build Version: %s\n", BuildVersion)

@@ -1,5 +1,7 @@
-// This file is part of clipshare (C)2022 by Marco Paganini
-// Please see http://github.com/marcopaganini/clipshare for details.
+// server.go - Server functions for clipsync.
+//
+// This file is part of clipsync (C)2022 by Marco Paganini
+// Please see http://github.com/marcopaganini/clipsync for details.
 
 package main
 
@@ -20,7 +22,7 @@ import (
 )
 
 const (
-	serverLockFile = "/var/run/lock/clipshare-server.lock"
+	serverLockFile = "/var/run/lock/clipsync-server.lock"
 
 	// Timeout for accept, in seconds.
 	serverConnectionTimeout = 3

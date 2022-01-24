@@ -1,8 +1,11 @@
 #!/bin/bash
+# socket-tunnel.sh
+#   Create a permanent SSH tunnel to another computer and forward.
+#   the clipsync socket to the remote one.
 
-readonly LOCKFILE="$HOME/local/share/clipshare/.clipshare-tunnel.lock"
-readonly SOCKFILE="$HOME/.clipshare.sock"
-readonly REMOTE_SOCKFILE="$HOME/.clipshare.sock"
+readonly LOCKFILE="$HOME/local/share/clipsync/.clipsync-tunnel.lock"
+readonly SOCKFILE="$HOME/.clipsync.sock"
+readonly REMOTE_SOCKFILE="$HOME/.clipsync.sock"
 
 readonly PROGRAM="${0##*/}"
 

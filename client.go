@@ -1,3 +1,8 @@
+// client.go - Client functions for clipsync.
+//
+// This file is part of clipsync (C)2022 by Marco Paganini
+// Please see http://github.com/marcopaganini/clipsync for details.
+
 package main
 
 import (
@@ -13,7 +18,7 @@ import (
 )
 
 const (
-	syncerLockFile = "/var/run/lock/clipshare-syncer.lock"
+	syncerLockFile = "/var/run/lock/clipsync-client.lock"
 )
 
 // publishToServer opens a socket to the server and publishes the contents.
@@ -91,12 +96,19 @@ func subscribeToServer(sockfile string, sel *selection) {
 // and updates the remote clipboard server when changes happen. This function
 // never returns.
 //
-// If 'protect' is set, we activate "single character protection": Basically,
-// ignore the clipboard (and restore it from the last good known value) if it
-// contains only one character. This is a workaround to a bugs in Chrome Linux
-// (chrome overwrites the primary selection with one character when a
-// composition sequence is used.)
-func publishSelection(sockfile string, sel *selection, protect bool, both bool) {
+// If chromeQuirk is set, the function restores the primary selection when it
+// contains a single rune (character or UTF character). This is a workaround for
+// Chrome in Linux where chrome sometimes overwrites the primary selection with
+// a single character when compose sequences are used.
+//
+// if syncSelections is set, keep both primary and clipboard selections in
+// sync (i.e. setting one will also set the other). Note that the server
+// only handles one version of the clipboard.
+//
+// Note: For now, reading and writing to the clipboard is somewhat of an
+// expensive operation as it requires calling xclip. This will be changed in a
+// future version, which should allow us to simplify this function.
+func publishSelection(sockfile string, sel *selection, chromeQuirk bool, syncSelections bool) {
 	for {
 		xprimary := readSelection(selPrimary)
 		xclipboard := readSelection(selClipboard)
@@ -106,7 +118,7 @@ func publishSelection(sockfile string, sel *selection, protect bool, both bool) 
 
 		// Restore the primary selection to the saved value if it contains
 		// a single rune and 'protect' is set.
-		if protect && utf8.RuneCountInString(xprimary) == 1 {
+		if chromeQuirk && utf8.RuneCountInString(xprimary) == 1 {
 			xprimary = memPrimary
 			if err := writeSelection(memPrimary, selPrimary); err != nil {
 				log.Errorf("Cannot write to primary selection: %v", err)
@@ -114,7 +126,7 @@ func publishSelection(sockfile string, sel *selection, protect bool, both bool) 
 		}
 
 		// Sync primary and clipboard, if requested.
-		if both {
+		if syncSelections {
 			// clipboard changed, sync to primary.
 			if xclipboard != memClipboard {
 				xprimary = xclipboard
@@ -171,10 +183,10 @@ func publishReader(sockfile string, r io.Reader, filter bool) error {
 	return nil
 }
 
-// syncer maintains the local primary selection synchronized with the remote
+// client maintains the local primary selection synchronized with the remote
 // server clipboard. Subscribing to a server will sync the in-memory version of
 // the primary selection to that server.
-func syncer(sockfile string, protect bool, both bool) {
+func client(sockfile string, chromeQuirk bool, syncSelections bool) {
 	lock := singleInstanceOrDie(syncerLockFile)
 	defer lock.Unlock()
 
@@ -185,7 +197,7 @@ func syncer(sockfile string, protect bool, both bool) {
 	// environment variable is set.
 	if os.Getenv("DISPLAY") != "" {
 		// Runs forever.
-		publishSelection(sockfile, sel, protect, both)
+		publishSelection(sockfile, sel, chromeQuirk, syncSelections)
 	}
 
 	// No DISPLAY, sleep forever

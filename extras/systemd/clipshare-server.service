@@ -1,10 +1,10 @@
 [Unit]
-Description=Clipshare Server
+Description=Clipboard Sync Server
 After=network.target
 
 [Service]
 Type=exec
-ExecStart=/usr/local/bin/clipshare server
+ExecStart=/usr/local/bin/clips server
 Restart=on-failure
 User=PUT_YOUR_USERNAME_HERE
 

@@ -30,7 +30,7 @@ func main() {
 	var (
 		// General flags
 		app         = kingpin.New("clipsync", "Sync clipboard across machines")
-		optNocolors = app.Flag("no-colors", "Verbose mode.").Bool()
+		optNocolors = app.Flag("no-colors", "Don't use colors.").Bool()
 		optVerbose  = app.Flag("verbose", "Verbose mode.").Short('v').Bool()
 
 		// Client

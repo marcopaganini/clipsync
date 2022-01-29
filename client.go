@@ -111,13 +111,10 @@ func publishSelection(sockfile string, pollTime int, sel *selection, chromeQuirk
 		time.Sleep(time.Duration(pollTime) * time.Second)
 
 		xprimary := readSelection(selPrimary)
-		xclipboard := readSelection(selClipboard)
-
-		memPrimary := sel.getPrimary()
-		memClipboard := sel.getClipboard()
 
 		// Restore the primary selection to the saved value if it contains
 		// a single rune and 'protect' is set.
+		memPrimary := sel.getPrimary()
 		if chromeQuirk && utf8.RuneCountInString(xprimary) == 1 {
 			xprimary = memPrimary
 			if err := writeSelection(memPrimary, selPrimary); err != nil {
@@ -125,37 +122,62 @@ func publishSelection(sockfile string, pollTime int, sel *selection, chromeQuirk
 			}
 		}
 
-		// Sync primary and clipboard, if requested.
+		// Sync primary and clipboard, if requested. This will change the
+		// selections (sel) if sync is needed.
 		if syncSelections {
-			// clipboard changed, sync to primary.
-			if xclipboard != memClipboard {
-				xprimary = xclipboard
-				sel.setPrimary(xclipboard)
-				sel.setClipboard(xclipboard)
-				if err := writeSelection(xclipboard, selPrimary); err != nil {
-					log.Errorf("Cannot write to primary selection: %v", err)
-				}
-			} else if xprimary != memPrimary {
-				// primary changed, sync to clipboard.
-				sel.setClipboard(xprimary)
-				if err := writeSelection(xprimary, selClipboard); err != nil {
-					log.Errorf("Cannot write to clipboard: %v", err)
-				}
+			if err := syncPrimaryAndClip(sockfile, xprimary, readSelection(selClipboard), sel); err != nil {
+				log.Errorf("Error syncing selections (primary/clipboard): %v", err)
 			}
-		}
-
-		// Don't publish if there are no changes.
-		if memPrimary == xprimary {
 			continue
 		}
 
-		// Set in-memory primary selection and publish to server.
-		sel.setPrimary(xprimary)
-		log.Debugf("Got remote clipboard value: %s", xprimary)
-		if err := publishToServer(sockfile, xprimary); err != nil {
-			log.Errorf("Failed to set remote clipboard: %v", err)
+		// Only publish if our original clipboard has changed.
+		if sel.getPrimary() != xprimary {
+			// Set in-memory primary selection and publish to server.
+			sel.setPrimary(xprimary)
+			log.Debugf("Got remote clipboard value: %s", xprimary)
+			if err := publishToServer(sockfile, xprimary); err != nil {
+				log.Errorf("Failed to set remote clipboard: %v", err)
+			}
 		}
 	}
+}
+
+// publishPrimary publishes the given string to the server.
+//
+// syncPrimaryAndClip synchronizes the primary selection to the clipboard (and vice-versa).
+func syncPrimaryAndClip(sockfile, xprimary, xclipboard string, sel *selection) error {
+	var publish string
+
+	// X clipboard changed? Sync to memory and X primary selection.
+	if xclipboard != sel.getClipboard() {
+		sel.setPrimary(xclipboard)
+		sel.setClipboard(xclipboard)
+		publish = xclipboard
+		if err := writeSelection(xclipboard, selPrimary); err != nil {
+			return err
+		}
+	}
+
+	// X primary changed? Sync to memory and X clipboard.
+	if xprimary != sel.getPrimary() {
+		// primary changed, sync to clipboard.
+		sel.setPrimary(xprimary)
+		sel.setClipboard(xprimary)
+		publish = xprimary
+		if err := writeSelection(xprimary, selClipboard); err != nil {
+			return err
+		}
+	}
+
+	// Publish to server, if needed
+	if publish != "" {
+		if err := publishToServer(sockfile, publish); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // publishReader sends the contents of the io.Reader to all clipboards. The

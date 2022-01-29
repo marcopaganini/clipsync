@@ -92,6 +92,14 @@ func main() {
 		log.Fatalf("Server terminated abnormally: %v", server(sockfile))
 
 	case clientCmd.FullCommand():
+		// Client mode only makes sense if the DISPLAY environment
+		// variable is set (otherwise we don't have a clipboard to sync).
+		if os.Getenv("DISPLAY") == "" {
+			fmt.Printf("The DISPLAY environment variable is not set.\n")
+			fmt.Printf("This means that we don't have a local clipboard to sync to the server.\n")
+			fmt.Printf("Make sure you run this command inside an X session.\n")
+			os.Exit(1)
+		}
 		log.Infof("Starting client.")
 		client(sockfile, *clientCmdChromeQuirk, *clientCmdSyncSel)
 

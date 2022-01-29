@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"time"
 	"unicode/utf8"
 
@@ -79,10 +78,8 @@ func subscribeToServer(sockfile string, sel *selection) {
 			log.Debugf("Received %q, current memory primary selection: %q", data, value)
 			if data != value {
 				sel.setPrimary(data)
-				if os.Getenv("DISPLAY") != "" {
-					if err = writeSelection(data, selPrimary); err != nil {
-						log.Errorf("Unable to set local primary selection: %v", err)
-					}
+				if err = writeSelection(data, selPrimary); err != nil {
+					log.Errorf("Unable to set local primary selection: %v", err)
 				}
 			}
 		}
@@ -193,16 +190,6 @@ func client(sockfile string, chromeQuirk bool, syncSelections bool) {
 	sel := &selection{}
 	go subscribeToServer(sockfile, sel)
 
-	// Only attempt to sync the local (machine) primary selection if the DISPLAY
-	// environment variable is set.
-	if os.Getenv("DISPLAY") != "" {
-		// Runs forever.
-		publishSelection(sockfile, sel, chromeQuirk, syncSelections)
-	}
-
-	// No DISPLAY, sleep forever
-	log.Debugf("DISPLAY variable is not set. Won't set X selection. Sleeping forever.")
-	for {
-		time.Sleep(1e9 * time.Second)
-	}
+	// Runs forever.
+	publishSelection(sockfile, sel, chromeQuirk, syncSelections)
 }

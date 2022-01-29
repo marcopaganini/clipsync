@@ -22,19 +22,32 @@ import (
 )
 
 const (
+	// File holding the PID of this instance.
 	serverLockFile = "/var/run/lock/clipsync-server.lock"
+
+	// default socket file (will be under $HOME).
+	defaultSockFile = ".clipsync.sock"
+
+	// bufSize for socket reads.
+	bufSize = 32 * 1024 * 1024
 
 	// Timeout for accept, in seconds.
 	serverConnectionTimeout = 3
 )
 
-// sockPath returns the full path to the socket file.
-func sockPath(name string) (string, error) {
-	home := os.Getenv("HOME")
-	if home == "" {
-		return "", fmt.Errorf("sockPath: environment variable HOME not set")
+// makeSockFile returns the full path to the socket file.
+func makeSockFile(file string) (string, error) {
+	// If no file specified in the command line, use default under $HOME.
+	if file == "" {
+		home := os.Getenv("HOME")
+		if home == "" {
+			return "", fmt.Errorf("sockPath: environment variable HOME not set")
+		}
+		return filepath.Join(home, defaultSockFile), nil
 	}
-	return filepath.Join(home, name), nil
+
+	// If a file was specified, use it literally.
+	return file, nil
 }
 
 // removeSocket removes an existing socket file, if it exists.

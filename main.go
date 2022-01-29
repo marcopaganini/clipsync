@@ -15,13 +15,6 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
-const (
-	sockFilename = ".clipsync.sock"
-
-	// bufSize for socket reads.
-	bufSize = 32 * 1024 * 1024
-)
-
 // BuildVersion Holds the current git HEAD version number.
 // This is filled in by the build process (make).
 var BuildVersion string
@@ -32,6 +25,7 @@ func main() {
 		app         = kingpin.New("clipsync", "Sync clipboard across machines")
 		optNocolors = app.Flag("no-colors", "Don't use colors.").Bool()
 		optVerbose  = app.Flag("verbose", "Verbose mode.").Short('v').Bool()
+		optSockFile = app.Flag("sockfile", "Local socket file.").Short('S').String()
 
 		// Client
 		clientCmd            = app.Command("client", "Connect to a server and sync clipboards.")
@@ -77,7 +71,7 @@ func main() {
 	log.SetFormatter(logFormat)
 
 	// Used by multiple actions.
-	sockfile, err := sockPath(sockFilename)
+	sockfile, err := makeSockFile(*optSockFile)
 	if err != nil {
 		log.Fatalf("Unable to generate socket file name: %v", err)
 	}

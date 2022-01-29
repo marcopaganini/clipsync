@@ -35,9 +35,8 @@ func publishToServer(sockfile string, contents string) error {
 	return nil
 }
 
-// subscribeToServer constantly reads from the server and updates the in-memory
-// selection, and the local (if DISPLAY is set) with any changes reported by
-// the remote.
+// subscribeToServer constantly reads from the server and updates the local
+// selection with any changes reported by the remote.
 func subscribeToServer(sockfile string, sel *selection) {
 	for {
 		// Create connection.
@@ -77,7 +76,9 @@ func subscribeToServer(sockfile string, sel *selection) {
 			value := sel.getPrimary()
 			log.Debugf("Received %q, current memory primary selection: %q", data, value)
 			if data != value {
-				sel.setPrimary(data)
+				// Don't set the memory clipboard here, just the selection.
+				// This will cause publishSelection to automatically sync the
+				// primary selection to the clipboard, if required.
 				if err = writeSelection(data, selPrimary); err != nil {
 					log.Errorf("Unable to set local primary selection: %v", err)
 				}

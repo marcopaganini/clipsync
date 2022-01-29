@@ -106,8 +106,10 @@ func subscribeToServer(sockfile string, sel *selection) {
 // Note: For now, reading and writing to the clipboard is somewhat of an
 // expensive operation as it requires calling xclip. This will be changed in a
 // future version, which should allow us to simplify this function.
-func publishSelection(sockfile string, sel *selection, chromeQuirk bool, syncSelections bool) {
+func publishSelection(sockfile string, pollTime int, sel *selection, chromeQuirk bool, syncSelections bool) {
 	for {
+		time.Sleep(time.Duration(pollTime) * time.Second)
+
 		xprimary := readSelection(selPrimary)
 		xclipboard := readSelection(selClipboard)
 
@@ -144,7 +146,6 @@ func publishSelection(sockfile string, sel *selection, chromeQuirk bool, syncSel
 
 		// Don't publish if there are no changes.
 		if memPrimary == xprimary {
-			time.Sleep(time.Second)
 			continue
 		}
 
@@ -153,11 +154,7 @@ func publishSelection(sockfile string, sel *selection, chromeQuirk bool, syncSel
 		log.Debugf("Got remote clipboard value: %s", xprimary)
 		if err := publishToServer(sockfile, xprimary); err != nil {
 			log.Errorf("Failed to set remote clipboard: %v", err)
-			time.Sleep(time.Second)
-			continue
 		}
-
-		time.Sleep(time.Second)
 	}
 }
 
@@ -184,7 +181,7 @@ func publishReader(sockfile string, r io.Reader, filter bool) error {
 // client maintains the local primary selection synchronized with the remote
 // server clipboard. Subscribing to a server will sync the in-memory version of
 // the primary selection to that server.
-func client(sockfile string, chromeQuirk bool, syncSelections bool) {
+func client(sockfile string, pollTime int, chromeQuirk bool, syncSelections bool) {
 	lock := singleInstanceOrDie(syncerLockFile)
 	defer lock.Unlock()
 
@@ -192,5 +189,5 @@ func client(sockfile string, chromeQuirk bool, syncSelections bool) {
 	go subscribeToServer(sockfile, sel)
 
 	// Runs forever.
-	publishSelection(sockfile, sel, chromeQuirk, syncSelections)
+	publishSelection(sockfile, pollTime, sel, chromeQuirk, syncSelections)
 }

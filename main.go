@@ -28,21 +28,28 @@ var BuildVersion string
 
 func main() {
 	var (
+		// General flags
 		app         = kingpin.New("clipsync", "Sync clipboard across machines")
 		optNocolors = app.Flag("no-colors", "Verbose mode.").Bool()
 		optVerbose  = app.Flag("verbose", "Verbose mode.").Short('v').Bool()
 
-		copyCmd       = app.Command("copy", "Send contents of stdin to all clipboards.")
-		copyCmdFilter = copyCmd.Flag("filter", "Work as a filter: also copy stdin to stdout.").Short('f').Bool()
-
-		pasteCmd = app.Command("paste", "Paste from the server clipboard.")
-
-		serverCmd = app.Command("server", "Run in server mode.")
-
+		// Client
 		clientCmd            = app.Command("client", "Connect to a server and sync clipboards.")
 		clientCmdChromeQuirk = clientCmd.Flag("fix-chrome-quirk", "Protect clipboard against one-character copies.").Bool()
 		clientCmdSyncSel     = clientCmd.Flag("sync-selections", "Synchonize primary (middle mouse) and clipboard (Ctrl-C/V).").Short('s').Bool()
+		clientPollTime       = app.Flag("poll-time", "Time between clipboard reads (in seconds)").Short('p').Default("1").Int()
 
+		// Copy
+		copyCmd       = app.Command("copy", "Send contents of stdin to all clipboards.")
+		copyCmdFilter = copyCmd.Flag("filter", "Work as a filter: also copy stdin to stdout.").Short('f').Bool()
+
+		// Paste
+		pasteCmd = app.Command("paste", "Paste from the server clipboard.")
+
+		// Server
+		serverCmd = app.Command("server", "Run in server mode.")
+
+		// Version
 		versionCmd = app.Command("version", "Show version information.")
 
 		err error
@@ -101,7 +108,7 @@ func main() {
 			os.Exit(1)
 		}
 		log.Infof("Starting client.")
-		client(sockfile, *clientCmdChromeQuirk, *clientCmdSyncSel)
+		client(sockfile, *clientPollTime, *clientCmdChromeQuirk, *clientCmdSyncSel)
 
 	case versionCmd.FullCommand():
 		fmt.Printf("Build Version: %s\n", BuildVersion)

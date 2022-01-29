@@ -17,6 +17,8 @@ const (
 	selClipboard = "clipboard"
 )
 
+// selection contains a representation of the clipboard in memory
+// with methods to allow atomic reads and writes.
 type selection struct {
 	sync.RWMutex
 	primary   string
@@ -48,8 +50,8 @@ func (x *selection) getClipboard() string {
 	return v
 }
 
-// readSelection returns the contents of the chosen X selection.
-func readSelection(sel string) string {
+// getXSelection returns the contents of the chosen X selection.
+func getXSelection(sel string) string {
 	// xclip will return an error on an empty clipboard, but
 	// there's no portable way to fetch the return code. Being
 	// that the case, we'll just ignore those (TODO: Fix this).
@@ -61,8 +63,8 @@ func readSelection(sel string) string {
 	return string(out)
 }
 
-// writeSelection sets the contents of the chosen X selection.
-func writeSelection(contents string, sel string) error {
+// setXSelection sets the contents of the chosen X selection.
+func setXSelection(sel string, contents string) error {
 	xclip := exec.Command("xclip", "-selection", sel, "-i")
 	stdin, err := xclip.StdinPipe()
 	if err != nil {
@@ -78,4 +80,22 @@ func writeSelection(contents string, sel string) error {
 
 	log.Debugf("Set selection(%s) to %s", sel, contents)
 	return nil
+}
+
+// Syntactic sugar functions to access the X clipboard.
+
+func setXClipboard(contents string) error {
+	return setXSelection(selClipboard, contents)
+}
+
+func setXPrimary(contents string) error {
+	return setXSelection(selPrimary, contents)
+}
+
+func getXPrimary() string {
+	return getXSelection(selPrimary)
+}
+
+func getXClipboard() string {
+	return getXSelection(selClipboard)
 }

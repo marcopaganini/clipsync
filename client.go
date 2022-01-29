@@ -79,7 +79,7 @@ func subscribeToServer(sockfile string, sel *selection) {
 				// Don't set the memory clipboard here, just the selection.
 				// This will cause publishSelection to automatically sync the
 				// primary selection to the clipboard, if required.
-				if err = writeSelection(data, selPrimary); err != nil {
+				if err = setXPrimary(data); err != nil {
 					log.Errorf("Unable to set local primary selection: %v", err)
 				}
 			}
@@ -110,14 +110,14 @@ func publishSelection(sockfile string, pollTime int, sel *selection, chromeQuirk
 	for {
 		time.Sleep(time.Duration(pollTime) * time.Second)
 
-		xprimary := readSelection(selPrimary)
+		xprimary := getXPrimary()
 
 		// Restore the primary selection to the saved value if it contains
 		// a single rune and 'protect' is set.
 		memPrimary := sel.getPrimary()
 		if chromeQuirk && utf8.RuneCountInString(xprimary) == 1 {
 			xprimary = memPrimary
-			if err := writeSelection(memPrimary, selPrimary); err != nil {
+			if err := setXPrimary(memPrimary); err != nil {
 				log.Errorf("Cannot write to primary selection: %v", err)
 			}
 		}
@@ -125,7 +125,7 @@ func publishSelection(sockfile string, pollTime int, sel *selection, chromeQuirk
 		// Sync primary and clipboard, if requested. This will change the
 		// selections (sel) if sync is needed.
 		if syncSelections {
-			if err := syncPrimaryAndClip(sockfile, xprimary, readSelection(selClipboard), sel); err != nil {
+			if err := syncPrimaryAndClip(sockfile, xprimary, getXClipboard(), sel); err != nil {
 				log.Errorf("Error syncing selections (primary/clipboard): %v", err)
 			}
 			continue
@@ -154,7 +154,7 @@ func syncPrimaryAndClip(sockfile, xprimary, xclipboard string, sel *selection) e
 		sel.setPrimary(xclipboard)
 		sel.setClipboard(xclipboard)
 		publish = xclipboard
-		if err := writeSelection(xclipboard, selPrimary); err != nil {
+		if err := setXPrimary(xclipboard); err != nil {
 			return err
 		}
 	}
@@ -165,7 +165,7 @@ func syncPrimaryAndClip(sockfile, xprimary, xclipboard string, sel *selection) e
 		sel.setPrimary(xprimary)
 		sel.setClipboard(xprimary)
 		publish = xprimary
-		if err := writeSelection(xprimary, selClipboard); err != nil {
+		if err := setXClipboard(xprimary); err != nil {
 			return err
 		}
 	}

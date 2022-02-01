@@ -1,0 +1,49 @@
+# User systemd unit to create a SSH tunnel to the server.
+#
+# This unit file creates an SSH tunnel to the server of your choice and
+# redirects all access to the local socket file to the destination socket file.
+# It assumes a few things:
+#
+# - You're logging in into X using a display manager.
+# - You have askpass-gnome or a similar graphical password prompt program
+#   installed (plain askpass won't do).
+# - You have ssh-agent installed (it will create another instance of ssh-agent
+#   just for the SSH command.
+#
+# To use:
+# - Edit this file and change the parameters below.
+# - Copy this file to ~/.config/systemd/user
+# - systemctl --user daemon-reload
+# - systemctl --user enable clipsync-tunnel.
+#
+# Note that you DO NOT need to start this service. It depends on
+# clipsync-client and will be started automatically by that systemd unit.
+# Take a look at clipsync-client.service for details.
+
+[Unit]
+Description=Clipboard SSH tunnel
+After=network.target clipsync-client.service
+
+[Service]
+# Change the value of LOCAL_SOCKET and REMOTE_SOCKET to match your
+# installation.  By default, they should point to $HOME/.clipsync.sock. If your
+# server uses the socket file at a different location, change it here.
+Environment="LOCAL_SOCKET=<your_home_dir>/.clipsync.sock"
+Environment="REMOTE_SOCKET=<your_home_dir>/.clipsync.sock"
+
+# FQDN of your server.
+Environment="SERVER=<fqdn_of_your_server>"
+
+ExecStartPre=-rm -f "${LOCAL_SOCKET}"
+ExecStart=/usr/bin/ssh-agent -- \
+          /usr/bin/ssh \
+          -NT \
+          -o ServerAliveInterval=60 \
+          -o ExitOnForwardFailure=yes \
+          -L "${LOCAL_SOCKET}:${REMOTE_SOCKET}" \
+          "${SERVER}"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default-target clipsync-client.service

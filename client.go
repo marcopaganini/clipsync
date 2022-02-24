@@ -110,7 +110,7 @@ func publishSelection(sockfile string, pollTime int, sel *selection, chromeQuirk
 	for {
 		time.Sleep(time.Duration(pollTime) * time.Second)
 
-		xprimary := getXPrimary()
+		xprimary := getXPrimary("")
 
 		// Restore the primary selection to the saved value if it contains
 		// a single rune and 'protect' is set.
@@ -125,7 +125,7 @@ func publishSelection(sockfile string, pollTime int, sel *selection, chromeQuirk
 		// Sync primary and clipboard, if requested. This will change the
 		// selections (sel) if sync is needed.
 		if syncSelections {
-			if err := syncPrimaryAndClip(sockfile, xprimary, getXClipboard(), sel); err != nil {
+			if err := syncPrimaryAndClip(sockfile, xprimary, getXClipboard("text/plain"), sel); err != nil {
 				log.Errorf("Error syncing selections (primary/clipboard): %v", err)
 			}
 			continue
@@ -150,7 +150,9 @@ func syncPrimaryAndClip(sockfile, xprimary, xclipboard string, sel *selection) e
 	var publish string
 
 	// X clipboard changed? Sync to memory and X primary selection.
-	if xclipboard != sel.getClipboard() {
+	// Ignore blank returns as they could be an error in xclip or no
+	// content in the clipboard with the desired mime-type.
+	if xclipboard != "" && xclipboard != sel.getClipboard() {
 		sel.setPrimary(xclipboard)
 		sel.setClipboard(xclipboard)
 		publish = xclipboard
@@ -160,7 +162,7 @@ func syncPrimaryAndClip(sockfile, xprimary, xclipboard string, sel *selection) e
 	}
 
 	// X primary changed? Sync to memory and X clipboard.
-	if xprimary != sel.getPrimary() {
+	if xprimary != "" && xprimary != sel.getPrimary() {
 		// primary changed, sync to clipboard.
 		sel.setPrimary(xprimary)
 		sel.setClipboard(xprimary)

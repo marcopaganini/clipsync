@@ -51,11 +51,15 @@ func (x *selection) getClipboard() string {
 }
 
 // getXSelection returns the contents of the chosen X selection.
-func getXSelection(sel string) string {
+func getXSelection(sel, mimetype string) string {
 	// xclip will return an error on an empty clipboard, but
 	// there's no portable way to fetch the return code. Being
 	// that the case, we'll just ignore those (TODO: Fix this).
-	xclip := exec.Command("xclip", "-selection", sel, "-o")
+	args := []string{"-selection", sel, "-o"}
+	if mimetype != "" {
+		args = append(args, "-t", mimetype)
+	}
+	xclip := exec.Command("xclip", args...)
 	out, err := xclip.Output()
 	if err != nil {
 		return ""
@@ -92,10 +96,10 @@ func setXPrimary(contents string) error {
 	return setXSelection(selPrimary, contents)
 }
 
-func getXPrimary() string {
-	return getXSelection(selPrimary)
+func getXPrimary(mimetype string) string {
+	return getXSelection(selPrimary, mimetype)
 }
 
-func getXClipboard() string {
-	return getXSelection(selClipboard)
+func getXClipboard(mimetype string) string {
+	return getXSelection(selClipboard, mimetype)
 }

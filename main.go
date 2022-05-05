@@ -26,6 +26,7 @@ func main() {
 		optNocolors = app.Flag("no-colors", "Don't use colors.").Bool()
 		optVerbose  = app.Flag("verbose", "Verbose mode.").Short('v').Bool()
 		optSockFile = app.Flag("sockfile", "Local socket file.").Short('S').String()
+		optLogFile  = app.Flag("logfile", "Log file (stderr if not specified)").Short('L').String()
 
 		// Client
 		clientCmd            = app.Command("client", "Connect to a server and sync clipboards.")
@@ -57,6 +58,17 @@ func main() {
 		log.SetLevel(log.DebugLevel)
 		log.SetReportCaller(true)
 	}
+
+	// Logfile.
+	if *optLogFile != "" {
+		logf, err := os.OpenFile(*optLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer logf.Close()
+		log.SetOutput(logf)
+	}
+
 	logFormat := &log.TextFormatter{
 		FullTimestamp:          true,
 		DisableLevelTruncation: true,
@@ -85,6 +97,7 @@ func main() {
 		fmt.Print(contents)
 
 	case copyCmd.FullCommand():
+		log.Debug("Got copy command")
 		if err = publishReader(sockfile, os.Stdin, *copyCmdFilter); err != nil {
 			log.Fatalf("Error sending contents to clipboards: %v", err)
 		}

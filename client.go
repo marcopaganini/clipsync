@@ -185,7 +185,7 @@ func syncPrimaryAndClip(sockfile, xprimary, xclipboard string, sel *selection) e
 // publishReader sends the contents of the io.Reader to all clipboards. The
 // local primary selection will be set by the syncer (running in another
 // instance). If 'filter' is set, the contents of the standard input are
-// re-printed in the standard output.
+// re-printed to the standard output.
 func publishReader(sockfile string, r io.Reader, filter bool) error {
 	data, err := io.ReadAll(r)
 	if err != nil {
@@ -193,13 +193,16 @@ func publishReader(sockfile string, r io.Reader, filter bool) error {
 	}
 	contents := string(data)
 
+	// Publish to server and continue, even on error. Printing input to stdout
+	// (in case --filter has been requested has to be done AFTER publishing.
+	// This guarantees that if the program is killed by SIGPIPE, we'll already
+	// have sent the information to the clipsync server.
+	err = publishToServer(sockfile, contents)
+
 	if filter {
 		fmt.Print(contents)
 	}
-	if err = publishToServer(sockfile, contents); err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 // client maintains the local primary selection synchronized with the remote

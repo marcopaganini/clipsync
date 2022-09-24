@@ -99,7 +99,7 @@ func main() {
 	case copyCmd.FullCommand():
 		log.Debug("Got copy command")
 		if err = publishReader(sockfile, os.Stdin, *copyCmdFilter); err != nil {
-			log.Fatalf("Error sending contents to clipboards: %v", err)
+			log.Fatalf("Error publishing content to server: %v", err)
 		}
 
 	case serverCmd.FullCommand():

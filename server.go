@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -27,9 +28,6 @@ const (
 
 	// default socket file (will be under $HOME).
 	defaultSockFile = ".clipsync.sock"
-
-	// bufSize for socket reads.
-	bufSize = 32 * 1024 * 1024
 
 	// Timeout for accept, in seconds.
 	serverConnectionTimeout = 3
@@ -131,17 +129,15 @@ func server(sockfile string) error {
 	for {
 		// Accept returns a new connection for each new connection to this
 		// server. We process the commands here and dispatch the long
-		// lived actions in a gorouting (currently, Subscribe).
+		// lived actions in a goroutine (currently, Subscribe).
 		conn, err := listen.Accept()
 		if err != nil {
 			return fmt.Errorf("server: Accept error: %v", err)
 		}
 
-		buf := make([]byte, bufSize)
-
-		// Read command from client.
+		// Read command from client until \0.
 		conn.SetDeadline(time.Now().Add(serverConnectionTimeout * time.Second))
-		nbytes, err := conn.Read(buf)
+		buf, err := bufio.NewReader(conn).ReadBytes('\x00')
 		if err != nil {
 			switch {
 			case err == io.EOF:
@@ -155,19 +151,17 @@ func server(sockfile string) error {
 				return fmt.Errorf("server: Error reading socket: %v", err)
 			}
 		}
-		data := string(buf[0:nbytes])
+		data := strings.TrimSuffix(string(buf), "\x00")
 
 		switch {
 		// Publish Request: set the current primary selection to the value read
 		// from the socket and broadcast it to all other connections. Close the
 		// connection afterwards.
 		case strings.HasPrefix(data, "PUB\n"):
-			log.Infof("Publish request received.")
-			log.Debugf("Received value: %q", data)
+			log.Debugf("Received Publish request from client: %s", redact(data))
 
 			// Update in-memory primary selection.
-			data = data[4:nbytes]
-			sel.setPrimary(data)
+			sel.setPrimary(data[4:])
 
 			// Update all other instances.
 			for k, c := range remoteMsg {
@@ -200,7 +194,7 @@ func server(sockfile string) error {
 
 		// Unknown command.
 		default:
-			log.Errorf("Received unknown command: %q", data)
+			log.Errorf("Received unknown command: %s", data)
 			conn.Close()
 		}
 	}
@@ -232,7 +226,7 @@ func subHandler(id int, conn net.Conn, clip *selection, remoteMsg map[int]chan s
 	for {
 		// Wait for updates to my id in the map of channels.
 		contents := <-remoteMsg[id]
-		log.Debugf("Handler %d: Got update request for %s", id, contents)
+		log.Debugf("Handler %d: Got update request for %s", id, redact(contents))
 		_, err := conn.Write([]byte(contents))
 		if err != nil {
 			log.Errorf("Handler %d: Error writing socket: %v", id, err)
@@ -247,17 +241,16 @@ func subHandler(id int, conn net.Conn, clip *selection, remoteMsg map[int]chan s
 // printServerClipboard sends a request to the server to print its internal
 // representation of the clipboard.
 func printServerClipboard(sockfile string) (string, error) {
-	buf := make([]byte, bufSize)
 	conn, err := net.Dial("unix", sockfile)
 	if err != nil {
 		log.Error(err)
 		return "", err
 	}
-	if _, err := fmt.Fprintf(conn, "PRINT\n"); err != nil {
+	if _, err := fmt.Fprintf(conn, "PRINT\n\x00"); err != nil {
 		log.Errorf("Error writing to socket: %v", err)
 	}
 	// Read one record and print it.
-	nbytes, err := conn.Read(buf)
+	buf, err := bufio.NewReader(conn).ReadBytes('\x00')
 	if err != nil {
 		if err == io.EOF {
 			log.Infof("Connection closed by server.")
@@ -267,5 +260,5 @@ func printServerClipboard(sockfile string) (string, error) {
 		return "", err
 	}
 	conn.Close()
-	return string(buf[0:nbytes]), nil
+	return strings.TrimSuffix(string(buf), "\x00"), nil
 }

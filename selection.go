@@ -82,7 +82,7 @@ func setXSelection(sel string, contents string) error {
 	stdin.Close()
 	xclip.Wait()
 
-	log.Debugf("Set selection(%s) to %s", sel, contents)
+	log.Debugf("Set selection(%s) to: %s", sel, redact(contents))
 	return nil
 }
 

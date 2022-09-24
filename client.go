@@ -6,9 +6,11 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -27,11 +29,11 @@ func publishToServer(sockfile string, contents string) error {
 		log.Errorf("publishToServer: %v", err)
 		return err
 	}
-	if _, err := fmt.Fprintf(conn, "PUB\n%s", contents); err != nil {
+	log.Debugf("Publishing to server: %s\n", redact(contents))
+	if _, err := conn.Write([]byte("PUB\n" + contents + "\x00")); err != nil {
 		log.Errorf("publishToServer: Error writing to socket: %v", err)
 	}
 	conn.Close()
-	log.Debugf("publishToServer: sent %q", contents)
 	return nil
 }
 
@@ -39,9 +41,6 @@ func publishToServer(sockfile string, contents string) error {
 // selection with any changes reported by the remote.
 func subscribeToServer(sockfile string, sel *selection) {
 	for {
-		// Create connection.
-		buf := make([]byte, bufSize)
-
 		// Dial and send subscribe command (with exponential backoff).
 		var conn net.Conn
 
@@ -58,7 +57,7 @@ func subscribeToServer(sockfile string, sel *selection) {
 			log.Infof("Connected to %s", sockfile)
 
 			// Send Subscribe command.
-			if _, err = fmt.Fprintln(conn, "SUB"); err != nil {
+			if _, err = fmt.Fprint(conn, "SUB\n\x00"); err != nil {
 				log.Infof("Error writing to socket: %v\n", err)
 				return err
 			}
@@ -67,15 +66,17 @@ func subscribeToServer(sockfile string, sel *selection) {
 
 		// Read contents until killed.
 		for {
-			nbytes, err := conn.Read(buf[:])
+			buf, err := bufio.NewReader(conn).ReadBytes('\x00')
 			if err != nil {
 				log.Errorf("Error reading socket: %v", err)
 				break
 			}
-			data := string(buf[0:nbytes])
+			data := strings.TrimSuffix(string(buf), "\x00")
 			value := sel.getPrimary()
-			log.Debugf("Received %q, current memory primary selection: %q", data, value)
+			log.Debugf("Received from server: %s", redact(data))
+			log.Debugf("Current memory primary selection: %s", redact(value))
 			if data != value {
+				log.Debugf("Values differ. Will write to primary selection")
 				// Don't set the memory clipboard here, just the selection.
 				// This will cause publishSelection to automatically sync the
 				// primary selection to the clipboard, if required.
@@ -135,7 +136,7 @@ func publishSelection(sockfile string, pollTime int, sel *selection, chromeQuirk
 		if sel.getPrimary() != xprimary {
 			// Set in-memory primary selection and publish to server.
 			sel.setPrimary(xprimary)
-			log.Debugf("Got remote clipboard value: %s", xprimary)
+			log.Debugf("Got remote clipboard value: %s", redact(xprimary))
 			if err := publishToServer(sockfile, xprimary); err != nil {
 				log.Errorf("Failed to set remote clipboard: %v", err)
 			}

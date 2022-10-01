@@ -1,0 +1,14 @@
+[Unit]
+Description=Clipboard Syncer
+After=network.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/clips -v --user clipsync \
+          --password-file "/full/path/to/password/file" \
+          --server ssh://your_server:port \
+          client --sync-selections --redact-level=4
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

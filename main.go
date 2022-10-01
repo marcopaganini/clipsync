@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -26,6 +27,9 @@ import (
 // BuildVersion Holds the current git HEAD version number.
 // This is filled in by the build process (make).
 var BuildVersion string
+
+// The redact object is used by other functions in this namespace.
+var redact redactType
 
 func newBroker(server, topic, user, password, cafile string, handler func(client mqtt.Client, msg mqtt.Message)) (mqtt.Client, error) {
 	tlsconfig, err := newTLSConfig(cafile)
@@ -68,26 +72,23 @@ func newBroker(server, topic, user, password, cafile string, handler func(client
 }
 
 func newTLSConfig(cafile string) (*tls.Config, error) {
-	certpool := x509.NewCertPool()
-	pemCerts, err := ioutil.ReadFile(cafile)
-	if err == nil {
-		certpool.AppendCertsFromPEM(pemCerts)
-	}
-
 	// Create tls.Config with desired tls properties
-	return &tls.Config{
-		// RootCAs = certs used to verify server cert.
-		RootCAs: certpool,
-		// ClientAuth = whether to request cert from server.
-		// Since the server is set up for SSL, this happens
-		// anyways.
+	ret := &tls.Config{
 		ClientAuth: tls.NoClientCert,
 		// ClientCAs = certs used to validate client cert.
 		ClientCAs: nil,
-		// InsecureSkipVerify = verify that cert contents
-		// match server. IP matches what is in cert etc.
-		InsecureSkipVerify: true,
-	}, nil
+		// InsecureSkipVerify = Cert contents must match server, IP, host, etc.
+		//InsecureSkipVerify: true,
+	}
+	if cafile != "" {
+		certpool := x509.NewCertPool()
+		pemCerts, err := ioutil.ReadFile(cafile)
+		if err == nil {
+			certpool.AppendCertsFromPEM(pemCerts)
+		}
+		ret.RootCAs = certpool
+	}
+	return ret, nil
 }
 
 // singleInstanceOrDie guarantees that this is the only instance of
@@ -108,7 +109,7 @@ func pastecmd(server, topic, user, password, cafile string) error {
 	ch := make(chan string)
 	broker, err := newBroker(server, topic, user, password, cafile, func(client mqtt.Client, msg mqtt.Message) {
 		data := string(msg.Payload())
-		log.Debugf("Received from server: %s", redact(data))
+		log.Debugf("Received from server: %s", redact.redact(data))
 		ch <- data
 		return
 	})
@@ -138,7 +139,7 @@ func copycmd(server, topic, user, password, cafile string, filter bool) error {
 	defer broker.Disconnect(1)
 	spub := string(pub)
 
-	log.Debugf("Sending from stdin to broker: %s", redact(spub))
+	log.Debugf("Sending from stdin to broker: %s", redact.redact(spub))
 	if token := broker.Publish(topic, 0, true, spub); token.Wait() && token.Error() != nil {
 		return fmt.Errorf("Error publishing data: %v", token.Error())
 	}
@@ -174,17 +175,19 @@ func clientcmd(server, topic, user, password, cafile string, polltime int, chrom
 func main() {
 	var (
 		// General flags
-		app          = kingpin.New("clipsync", "Sync clipboard across machines")
-		optNocolors  = app.Flag("no-colors", "Don't use colors.").Bool()
-		optVerbose   = app.Flag("verbose", "Verbose mode.").Short('v').Bool()
-		optServer    = app.Flag("server", "MQTT broker ip:port.").Short('s').Default("ssl://localhost:8883").String()
-		optUser      = app.Flag("user", "MQTT user").Short('u').Default("emqx").String()
-		optPassword  = app.Flag("password", "MQTT password").Short('p').Default("public").String()
-		optTopic     = app.Flag("topic", "MQTT topic").Short('t').Default("testtopic1234666").String()
-		optLogFile   = app.Flag("logfile", "Log file (stderr if not specified)").Short('L').String()
-		optCAFile    = app.Flag("cafile", "CA certificates file").Default("/etc/ssl/certs/ca-certificates.crt").String()
-		optMQTTDebug = app.Flag("mqtt-debug", "Turn on MQTT debugging").Bool()
-		optDebug     = app.Flag("debug", "Make verbose more verbose").Short('D').Bool()
+		app             = kingpin.New("clipsync", "Sync clipboard across machines")
+		optCAFile       = app.Flag("cafile", "CA certificates file").String()
+		optDebug        = app.Flag("debug", "Make verbose more verbose").Short('D').Bool()
+		optLogFile      = app.Flag("logfile", "Log file (stderr if not specified)").Short('L').String()
+		optMQTTDebug    = app.Flag("mqtt-debug", "Turn on MQTT debugging").Bool()
+		optNocolors     = app.Flag("no-colors", "No colors on log output to terminal.").Bool()
+		optPassword     = app.Flag("password", "MQTT password").Short('p').String()
+		optPasswordFile = app.Flag("password-file", "File containing the MQTT password").String()
+		optRedactLevel  = app.Flag("redact-level", "Max number of characters to show on redacted messages").Int()
+		optServer       = app.Flag("server", "MQTT broker URL. E.g. ssl://ip:port.").Short('s').Required().String()
+		optTopic        = app.Flag("topic", "MQTT topic").Short('t').Default("clipsync").String()
+		optUser         = app.Flag("user", "MQTT user").Short('u').String()
+		optVerbose      = app.Flag("verbose", "Verbose mode.").Short('v').Bool()
 
 		// Client
 		clientCmd            = app.Command("client", "Connect to a server and sync clipboards.")
@@ -213,6 +216,19 @@ func main() {
 			log.SetReportCaller(true)
 		}
 	}
+
+	// Password.
+	password := *optPassword
+	if *optPasswordFile != "" {
+		p, err := os.ReadFile(*optPasswordFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		password = strings.TrimRight(string(p), "\n")
+	}
+
+	// Initialize redact object.
+	redact = redactType{*optRedactLevel}
 
 	// Logfile.
 	if *optLogFile != "" {
@@ -247,12 +263,12 @@ func main() {
 
 	switch cmdline {
 	case pasteCmd.FullCommand():
-		if err := pastecmd(*optServer, *optTopic, *optUser, *optPassword, *optCAFile); err != nil {
+		if err := pastecmd(*optServer, *optTopic, *optUser, password, *optCAFile); err != nil {
 			log.Fatal(err)
 		}
 
 	case copyCmd.FullCommand():
-		if err := copycmd(*optServer, *optTopic, *optUser, *optPassword, *optCAFile, *copyCmdFilter); err != nil {
+		if err := copycmd(*optServer, *optTopic, *optUser, password, *optCAFile, *copyCmdFilter); err != nil {
 			log.Fatal(err)
 		}
 
@@ -261,7 +277,7 @@ func main() {
 		lock := singleInstanceOrDie(syncerLockFile)
 		defer lock.Unlock()
 
-		if err := clientcmd(*optServer, *optTopic, *optUser, *optPassword, *optCAFile, *clientPollTime, *clientCmdChromeQuirk, *clientCmdSyncSel); err != nil {
+		if err := clientcmd(*optServer, *optTopic, *optUser, password, *optCAFile, *clientPollTime, *clientCmdChromeQuirk, *clientCmdSyncSel); err != nil {
 			log.Fatal(err)
 		}
 

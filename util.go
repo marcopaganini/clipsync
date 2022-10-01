@@ -10,18 +10,28 @@ import (
 	"regexp"
 )
 
-const redactLen = 50
+// Show at most this number of characters on a redacted string
+// (half at the beginning, half at the end.)
+const redactDefaultLen = 50
+
+// redact holds the level of redaction.
+type redactType struct {
+	maxlen int
+}
 
 // redact returns a shortened and partially redacted string.
-func redact(s string) string {
-	// This is somewhat inefficient.
+func (x redactType) redact(s string) string {
+	// Replace all control characters with dots.
 	re := regexp.MustCompile("[[:cntrl:]]")
 	s = re.ReplaceAllString(s, ".")
 	ret := fmt.Sprintf("[%q]", s)
 
 	// Only redact if too long.
-	if len(s) > redactLen {
-		ret = fmt.Sprintf("[%s(...)%s]", s[:redactLen/2], s[len(s)-redactLen/2:])
+	if x.maxlen <= 0 {
+		x.maxlen = redactDefaultLen
+	}
+	if len(s) > x.maxlen {
+		ret = fmt.Sprintf("[%s(...)%s]", s[:x.maxlen/2], s[len(s)-x.maxlen/2:])
 	}
 	ret += fmt.Sprintf(" length=%d", len(s))
 	return ret

@@ -92,7 +92,7 @@ func (x *client) setXSelection(sel string, contents string) error {
 	stdin.Close()
 	xclip.Wait()
 
-	log.Debugf("Set selection(%s) to: %s", sel, redact(contents))
+	log.Debugf("Set selection(%s) to: %s", sel, redact.redact(contents))
 	return nil
 }
 
@@ -122,8 +122,8 @@ func (x *client) subHandler(client mqtt.Client, msg mqtt.Message) {
 	primary := x.getPrimary()
 	data := string(msg.Payload())
 
-	log.Debugf("Received from server: %s", redact(data))
-	log.Debugf("Current memory primary selection: %s", redact(primary))
+	log.Debugf("Received from server: %s", redact.redact(data))
+	log.Debugf("Current memory primary selection: %s", redact.redact(primary))
 
 	if data != primary {
 		// Don't set the in-memory primary. This will cause clientloop
@@ -177,7 +177,7 @@ func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chr
 			}
 			// Publish to server, if needed
 			if pub != "" {
-				log.Debugf("Publishing clipboard: %s", redact(pub))
+				log.Debugf("Publishing clipboard: %s", redact.redact(pub))
 				if token := broker.Publish(topic, 0, true, pub); token.Wait() && token.Error() != nil {
 					log.Errorf("Error publishing clipboard: %v", token.Error())
 				}
@@ -189,7 +189,7 @@ func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chr
 		if cli.getPrimary() != xprimary {
 			// Set in-memory primary selection and publish to server.
 			cli.setPrimary(xprimary)
-			log.Debugf("Publishing primary selection: %s", redact(xprimary))
+			log.Debugf("Publishing primary selection: %s", redact.redact(xprimary))
 			if token := broker.Publish(topic, 0, true, xprimary); token.Wait() && token.Error() != nil {
 				log.Errorf("Error publishing primary selection: %v", token.Error())
 			}

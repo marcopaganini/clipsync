@@ -210,27 +210,6 @@ func main() {
 	// Command-line parsing.
 	cmdline := kingpin.MustParse(app.Parse(os.Args[1:]))
 
-	// Log formatting options.
-	if *optVerbose {
-		log.SetLevel(log.DebugLevel)
-		if *optDebug {
-			log.SetReportCaller(true)
-		}
-	}
-
-	// Password.
-	password := *optPassword
-	if *optPasswordFile != "" {
-		p, err := os.ReadFile(*optPasswordFile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		password = strings.TrimRight(string(p), "\n")
-	}
-
-	// Initialize redact object.
-	redact = redactType{*optRedactLevel}
-
 	// Logfile.
 	if *optLogFile != "" {
 		logf, err := os.OpenFile(*optLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -249,10 +228,36 @@ func main() {
 			return fmt.Sprintf("%s()", f.Function), fmt.Sprintf("%s:%d", filename, f.Line)
 		},
 	}
+	// If stdout does not point to a tty, assume we're using syslog/journald
+	// and remove the timestamp, since those systems already add it.
+	if fi, _ := os.Stdout.Stat(); (fi.Mode() & os.ModeCharDevice) == 0 {
+		logFormat.DisableTimestamp = true
+	}
+
+	if *optVerbose {
+		log.SetLevel(log.DebugLevel)
+		if *optDebug {
+			log.SetReportCaller(true)
+		}
+	}
+
 	if *optNocolors {
 		logFormat.DisableColors = true
 	}
 	log.SetFormatter(logFormat)
+
+	// Password.
+	password := *optPassword
+	if *optPasswordFile != "" {
+		p, err := os.ReadFile(*optPasswordFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		password = strings.TrimRight(string(p), "\n")
+	}
+
+	// Initialize redact object.
+	redact = redactType{*optRedactLevel}
 
 	// MQTT debugging
 	if *optMQTTDebug {

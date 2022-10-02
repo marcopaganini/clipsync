@@ -162,6 +162,7 @@ func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chr
 		memPrimary := cli.getPrimary()
 
 		if chromeQuirk && utf8.RuneCountInString(xprimary) == 1 {
+			log.Debugf("Chrome quirk detected. Restoring primary to %s", redact.redact(memPrimary))
 			xprimary = memPrimary
 			if err := cli.setXPrimary(memPrimary); err != nil {
 				log.Errorf("Cannot write to primary selection: %v", err)
@@ -177,10 +178,11 @@ func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chr
 			}
 			// Publish to server, if needed
 			if pub != "" {
-				log.Debugf("Publishing clipboard: %s", redact.redact(pub))
+				log.Debugf("Publishing result of syncPrimaryAndCLip: %s", redact.redact(pub))
 				if token := broker.Publish(topic, 0, true, pub); token.Wait() && token.Error() != nil {
-					log.Errorf("Error publishing clipboard: %v", token.Error())
+					log.Errorf("Error publishing result of syncPrimaryAndClip: %v", token.Error())
 				}
+				log.Debugf("Publish done")
 			}
 			continue
 		}
@@ -193,24 +195,24 @@ func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chr
 			if token := broker.Publish(topic, 0, true, xprimary); token.Wait() && token.Error() != nil {
 				log.Errorf("Error publishing primary selection: %v", token.Error())
 			}
+			log.Debugf("Publish done")
 		}
 	}
 }
 
 // syncPrimaryAndClip synchronizes the primary selection to the clipboard (and vice-versa).
 func syncPrimaryAndClip(broker mqtt.Client, xprimary, xclipboard string, cli *client) (string, error) {
-	var publish string
-
 	// X clipboard changed? Sync to memory and X primary selection.
 	// Ignore blank returns as they could be an error in xclip or no
 	// content in the clipboard with the desired mime-type.
 	if xclipboard != "" && xclipboard != cli.getClipboard() {
 		cli.setPrimary(xclipboard)
 		cli.setClipboard(xclipboard)
-		publish = xclipboard
+		log.Debugf("Syncing clipboard to X PRIMARY and memory primary/clipboard")
 		if err := cli.setXPrimary(xclipboard); err != nil {
 			return "", err
 		}
+		return xclipboard, nil
 	}
 
 	// X primary changed? Sync to memory and X clipboard.
@@ -218,11 +220,11 @@ func syncPrimaryAndClip(broker mqtt.Client, xprimary, xclipboard string, cli *cl
 		// primary changed, sync to clipboard.
 		cli.setPrimary(xprimary)
 		cli.setClipboard(xprimary)
-		publish = xprimary
+		log.Debugf("Syncing primary to X CLIPBOARD and memory primary/clipboard")
 		if err := cli.setXClipboard(xprimary); err != nil {
 			return "", err
 		}
+		return xprimary, nil
 	}
-
-	return publish, nil
+	return "", nil
 }

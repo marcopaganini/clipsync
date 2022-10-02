@@ -29,25 +29,25 @@ type client struct {
 	clipboard string
 }
 
-func (x *client) setPrimary(value string) {
+func (x *client) setMemPrimary(value string) {
 	x.Lock()
 	x.primary = value
 	x.Unlock()
 }
 
-func (x *client) setClipboard(value string) {
+func (x *client) setMemClipboard(value string) {
 	x.Lock()
 	x.clipboard = value
 	x.Unlock()
 }
 
-func (x *client) getPrimary() string {
+func (x *client) getMemPrimary() string {
 	x.Lock()
 	v := x.primary
 	x.Unlock()
 	return v
 }
-func (x *client) getClipboard() string {
+func (x *client) getMemClipboard() string {
 	x.Lock()
 	v := x.clipboard
 	x.Unlock()
@@ -119,7 +119,7 @@ func (x *client) getXClipboard(mimetype string) string {
 func (x *client) subHandler(client mqtt.Client, msg mqtt.Message) {
 	log.Debugf("Entered subHandler")
 
-	primary := x.getPrimary()
+	primary := x.getMemPrimary()
 	data := string(msg.Payload())
 
 	log.Debugf("Received from server: %s", redact.redact(data))
@@ -159,7 +159,7 @@ func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chr
 		// Restore the primary selection to the saved value if it contains
 		// a single rune and chromeQuirk is set.
 		xprimary := cli.getXPrimary("")
-		memPrimary := cli.getPrimary()
+		memPrimary := cli.getMemPrimary()
 
 		if chromeQuirk && utf8.RuneCountInString(xprimary) == 1 {
 			log.Debugf("Chrome quirk detected. Restoring primary to %s", redact.redact(memPrimary))
@@ -188,9 +188,9 @@ func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chr
 		}
 
 		// Only publish if our original clipboard has changed.
-		if cli.getPrimary() != xprimary {
+		if cli.getMemPrimary() != xprimary {
 			// Set in-memory primary selection and publish to server.
-			cli.setPrimary(xprimary)
+			cli.setMemPrimary(xprimary)
 			log.Debugf("Publishing primary selection: %s", redact.redact(xprimary))
 			if token := broker.Publish(topic, 0, true, xprimary); token.Wait() && token.Error() != nil {
 				log.Errorf("Error publishing primary selection: %v", token.Error())
@@ -205,9 +205,9 @@ func syncPrimaryAndClip(broker mqtt.Client, xprimary, xclipboard string, cli *cl
 	// X clipboard changed? Sync to memory and X primary selection.
 	// Ignore blank returns as they could be an error in xclip or no
 	// content in the clipboard with the desired mime-type.
-	if xclipboard != "" && xclipboard != cli.getClipboard() {
-		cli.setPrimary(xclipboard)
-		cli.setClipboard(xclipboard)
+	if xclipboard != "" && xclipboard != cli.getMemClipboard() {
+		cli.setMemPrimary(xclipboard)
+		cli.setMemClipboard(xclipboard)
 		log.Debugf("Syncing clipboard to X PRIMARY and memory primary/clipboard")
 		if err := cli.setXPrimary(xclipboard); err != nil {
 			return "", err
@@ -216,10 +216,10 @@ func syncPrimaryAndClip(broker mqtt.Client, xprimary, xclipboard string, cli *cl
 	}
 
 	// X primary changed? Sync to memory and X clipboard.
-	if xprimary != "" && xprimary != cli.getPrimary() {
+	if xprimary != "" && xprimary != cli.getMemPrimary() {
 		// primary changed, sync to clipboard.
-		cli.setPrimary(xprimary)
-		cli.setClipboard(xprimary)
+		cli.setMemPrimary(xprimary)
+		cli.setMemClipboard(xprimary)
 		log.Debugf("Syncing primary to X CLIPBOARD and memory primary/clipboard")
 		if err := cli.setXClipboard(xprimary); err != nil {
 			return "", err

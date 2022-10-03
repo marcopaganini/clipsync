@@ -46,9 +46,10 @@ func newBroker(server, topic, user, password, cafile string, handler func(client
 	opts.SetClientID(clientID)
 	log.Debugf("Set MQTT Client ID to %v", clientID)
 
-	opts.SetKeepAlive(2 * time.Second)
+	opts.SetKeepAlive(4 * time.Second)
 	opts.SetTLSConfig(tlsconfig)
-	opts.SetPingTimeout(1 * time.Second)
+	opts.SetPingTimeout(2 * time.Second)
+	opts.SetAutoReconnect(true)
 
 	if user != "" {
 		opts.SetUsername(user)
@@ -57,16 +58,22 @@ func newBroker(server, topic, user, password, cafile string, handler func(client
 		opts.SetPassword(password)
 	}
 
+	// If handler is present, assume we'll subscribe to a topic. In this case,
+	// set OnConnectHandler to re-subscribe every time we have a connection.
+	// This, together with SetAutoReconnect guarantees that we'll keep
+	// receiving messages from the topic after an automatic reconnect.
+	if handler != nil {
+		opts.SetOnConnectHandler(func(onconn mqtt.Client) {
+			log.Debugf("Connection detected. Subscribing to topic: %q", topic)
+			if token := onconn.Subscribe(topic, 0, handler); token.Wait() && token.Error() != nil {
+				log.Errorf("Unable to subscribe to topic %s: %v", topic, token.Error())
+			}
+		})
+	}
+
 	c := mqtt.NewClient(opts)
 	if token := c.Connect(); token.Wait() && token.Error() != nil {
 		return nil, token.Error()
-	}
-
-	// If handler is present, subscribe to topic and assign it.
-	if handler != nil {
-		if token := c.Subscribe(topic, 0, handler); token.Wait() && token.Error() != nil {
-			return nil, token.Error()
-		}
 	}
 
 	return c, nil

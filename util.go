@@ -7,7 +7,6 @@ package main
 
 import (
 	"fmt"
-	"regexp"
 )
 
 // Show at most this number of characters on a redacted string
@@ -21,9 +20,7 @@ type redactType struct {
 
 // redact returns a shortened and partially redacted string.
 func (x redactType) redact(s string) string {
-	// Replace all control characters with dots.
-	re := regexp.MustCompile("[[:cntrl:]]")
-	s = re.ReplaceAllString(s, ".")
+	// Default response.
 	ret := fmt.Sprintf("[%q]", s)
 
 	// Only redact if too long.
@@ -31,7 +28,7 @@ func (x redactType) redact(s string) string {
 		x.maxlen = redactDefaultLen
 	}
 	if len(s) > x.maxlen {
-		ret = fmt.Sprintf("[%s(...)%s]", s[:x.maxlen/2], s[len(s)-x.maxlen/2:])
+		ret = fmt.Sprintf("[%q(...)%q]", s[:x.maxlen/2], s[len(s)-x.maxlen/2:])
 	}
 	ret += fmt.Sprintf(" length=%d", len(s))
 	return ret

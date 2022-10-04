@@ -168,13 +168,17 @@ func clientcmd(server, topic, user, password, cafile string, polltime int, chrom
 	}
 
 	log.Infof("Starting client, server: %s", server)
-	cli := &client{}
+	cli := &client{
+		topic:          topic,
+		syncSelections: syncsel,
+	}
 	broker, err := newBroker(server, topic, user, password, cafile, cli.subHandler)
 	if err != nil {
 		log.Fatalf("Unable to connect to broker: %v", err)
 	}
+
 	// Loops forever sending any local clipboard changes to broker.
-	clientloop(broker, topic, polltime, cli, chromequirk, syncsel)
+	clientloop(broker, topic, polltime, cli, chromequirk)
 
 	// This should never happen.
 	return nil

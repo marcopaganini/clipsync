@@ -256,7 +256,7 @@ func main() {
 	// Password.
 	password := *optPassword
 	if *optPasswordFile != "" {
-		p, err := os.ReadFile(*optPasswordFile)
+		p, err := ioutil.ReadFile(*optPasswordFile)
 		if err != nil {
 			log.Fatal(err)
 		}

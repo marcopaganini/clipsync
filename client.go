@@ -6,6 +6,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"os/exec"
 	"sync"
 	"time"
@@ -20,6 +22,8 @@ const (
 	// Clipboard Selection Types.
 	selPrimary   = "primary"
 	selClipboard = "clipboard"
+	// Timeout when running xclip, in ms.
+	xclipTimeout = 1500
 )
 
 // client contains a representation of a MQTT client.
@@ -68,9 +72,13 @@ func (x *client) getXSelection(sel, mimetype string) string {
 	if mimetype != "" {
 		args = append(args, "-t", mimetype)
 	}
-	xclip := exec.Command("xclip", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), xclipTimeout*time.Millisecond)
+	defer cancel()
+
+	xclip := exec.CommandContext(ctx, "xclip", args...)
 	out, err := xclip.Output()
 	if err != nil {
+		log.Debugf("Error executing xclip: %v", err)
 		return ""
 	}
 	return string(out)
@@ -81,10 +89,13 @@ func (x *client) setXSelection(sel string, contents string) error {
 	x.Lock()
 	defer x.Unlock()
 
-	xclip := exec.Command("xclip", "-selection", sel, "-i")
+	ctx, cancel := context.WithTimeout(context.Background(), xclipTimeout*time.Millisecond)
+	defer cancel()
+
+	xclip := exec.CommandContext(ctx, "xclip", "-selection", sel, "-i")
 	stdin, err := xclip.StdinPipe()
 	if err != nil {
-		return err
+		return fmt.Errorf("Error reading xclip stdin: %v", err)
 	}
 	xclip.Start()
 

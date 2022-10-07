@@ -25,6 +25,11 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
+const (
+	// Config file.
+	configFile = "~/.config/clipsync/config"
+)
+
 // BuildVersion Holds the current git HEAD version number.
 // This is filled in by the build process (make).
 var BuildVersion string
@@ -184,6 +189,30 @@ func clientcmd(server, topic, user, password, cafile string, polltime int, chrom
 	return nil
 }
 
+// insertConfigFile checks for the existence of a configuration file and
+// inserts it as @file before the command line arguments. This causes kingpin
+// to read the contents of this file as arguments.
+func insertConfigFile(args []string, configFile string) []string {
+	if _, err := os.Stat(configFile); err != nil {
+		return args
+	}
+	log.Debugf("Using %q as config file", configFile)
+	return append([]string{"@" + configFile}, args...)
+}
+
+// tildeExpand expands the tilde at the beginning of a filename to $HOME.
+func tildeExpand(path string) string {
+	if !strings.HasPrefix(path, "~/") {
+		return path
+	}
+	dirname, err := os.UserHomeDir()
+	if err != nil {
+		log.Errorf("Unable to locate homedir when expanding: %q", path)
+		return path
+	}
+	return filepath.Join(dirname, path[2:])
+}
+
 func main() {
 	var (
 		// General flags
@@ -219,7 +248,8 @@ func main() {
 	)
 
 	// Command-line parsing.
-	cmdline := kingpin.MustParse(app.Parse(os.Args[1:]))
+	args := insertConfigFile(os.Args[1:], tildeExpand(configFile))
+	cmdline := kingpin.MustParse(app.Parse(args))
 
 	// Logfile.
 	if *optLogFile != "" {
@@ -260,7 +290,7 @@ func main() {
 	// Password.
 	password := *optPassword
 	if *optPasswordFile != "" {
-		p, err := ioutil.ReadFile(*optPasswordFile)
+		p, err := ioutil.ReadFile(tildeExpand(*optPasswordFile))
 		if err != nil {
 			log.Fatal(err)
 		}

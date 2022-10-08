@@ -1,19 +1,32 @@
+# Check go code.
+
 name: Test Go code
 on: [push, pull_request]
 jobs:
   testcode:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
+      - name: Setup Go compiler
+        uses: actions/setup-go@v3
         with:
           go-version: 1.19.x
           check-latest: true
+      - name: Install dependencies
         run: |
           go get -t ./...
-          go get -u golang.org/x/lint/golint
+          go install golang.org/x/lint/golint
+      - name: Build binary
+        run: |
           make
-          golint -set_exit_status
-          go vet
+      - name: Go test
+        run: |
           go test -v ./...
           go test -cpu=2 -race -v ./...
+      - name: Go Lint
+        run: |
+          golint -set_exit_status
+      - name: Go vet
+        run: |
+          go vet

@@ -160,8 +160,6 @@ func (x *client) subHandler(broker mqtt.Client, msg mqtt.Message) {
 		}
 		x.setMemClipboard(data)
 	}
-
-	publish(broker, x.topic, data)
 }
 
 // clientloop periodically reads from this machine's primary selection

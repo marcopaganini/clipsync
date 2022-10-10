@@ -10,7 +10,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -95,7 +94,7 @@ func newTLSConfig(cafile string) (*tls.Config, error) {
 	}
 	if cafile != "" {
 		certpool := x509.NewCertPool()
-		pemCerts, err := ioutil.ReadFile(cafile)
+		pemCerts, err := os.ReadFile(cafile)
 		if err == nil {
 			certpool.AppendCertsFromPEM(pemCerts)
 		}
@@ -290,7 +289,7 @@ func main() {
 	// Password.
 	password := *optPassword
 	if *optPasswordFile != "" {
-		p, err := ioutil.ReadFile(tildeExpand(*optPasswordFile))
+		p, err := os.ReadFile(tildeExpand(*optPasswordFile))
 		if err != nil {
 			log.Fatal(err)
 		}

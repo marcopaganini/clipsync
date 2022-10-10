@@ -9,9 +9,9 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/sirupsen/logrus"
@@ -179,6 +179,8 @@ func (x *client) subHandler(broker mqtt.Client, msg mqtt.Message) {
 // expensive operation as it requires calling xclip. This will be changed in a
 // future version, which should allow us to simplify this function.
 func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chromeQuirk bool) {
+	var singleUnicode = regexp.MustCompile(`^[[:^ascii:]]$`)
+
 	for {
 		time.Sleep(time.Duration(pollTime) * time.Second)
 
@@ -187,7 +189,11 @@ func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chr
 		xprimary := cli.getXPrimary("")
 		memPrimary := cli.getMemPrimary()
 
-		if chromeQuirk && utf8.RuneCountInString(xprimary) == 1 {
+		// Restore the memory clipboard if:
+		// 1) chromeQuirk is set and
+		// 2) The X clipboard contains a single unicode characters and
+		// 3) memClipboard does NOT contain a single unicode character (avoid loops).
+		if chromeQuirk && singleUnicode.MatchString(xprimary) && !singleUnicode.MatchString(memPrimary) {
 			log.Debugf("Chrome quirk detected. Restoring primary to %s", redact.redact(memPrimary))
 			xprimary = memPrimary
 			if err := cli.setXPrimary(memPrimary); err != nil {

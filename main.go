@@ -116,11 +116,23 @@ func singleInstanceOrDie(lckfile string) *lockfile.LockFile {
 
 // pastecmd prints the first message from the server (all messages are sent
 // with persist).
-func pastecmd(server, topic, user, password, cafile string) error {
+func pastecmd(server, topic, user, password, cafile string, cryptPassword []byte) error {
 	log.Debug("Got paste command")
 	ch := make(chan string)
+
 	broker, err := newBroker(server, topic, user, password, cafile, func(client mqtt.Client, msg mqtt.Message) {
+		var err error
+
 		data := string(msg.Payload())
+
+		if len(cryptPassword) > 0 {
+			data, err = decrypt64(data, cryptPassword)
+			if err != nil {
+				log.Error(err)
+				data = ""
+			}
+		}
+
 		log.Debugf("Received from server: %s", redact.redact(data))
 		ch <- data
 		return
@@ -138,7 +150,7 @@ func pastecmd(server, topic, user, password, cafile string) error {
 }
 
 // copycmd reads the stdin and sends it to the broker (server).
-func copycmd(server, topic, user, password, cafile string, filter bool) error {
+func copycmd(server, topic, user, password, cafile string, cryptPassword []byte, filter bool) error {
 	log.Debug("Got copy command")
 	broker, err := newBroker(server, topic, user, password, cafile, nil)
 	if err != nil {
@@ -152,19 +164,16 @@ func copycmd(server, topic, user, password, cafile string, filter bool) error {
 	spub := string(pub)
 
 	log.Debugf("Sending from stdin to broker: %s", redact.redact(spub))
-	if token := broker.Publish(topic, 0, true, spub); token.Wait() && token.Error() != nil {
-		return fmt.Errorf("Error publishing data: %v", token.Error())
-	}
+	publish(broker, topic, spub, cryptPassword)
 	if filter {
-		fmt.Print(string(pub))
+		fmt.Print(spub)
 	}
-
 	return nil
 }
 
 // clientcmd activates "client" mode, syncing the local clipboard to the server
 // and vice-versa. This function will only return in case of error.
-func clientcmd(server, topic, user, password, cafile string, polltime int, chromequirk, syncsel bool) error {
+func clientcmd(server, topic, user, password, cafile string, cryptPassword []byte, polltime int, chromequirk, syncsel bool) error {
 	// Client mode only makes sense if the DISPLAY environment
 	// variable is set (otherwise we don't have a clipboard to sync).
 	if os.Getenv("DISPLAY") == "" {
@@ -175,6 +184,7 @@ func clientcmd(server, topic, user, password, cafile string, polltime int, chrom
 	cli := &client{
 		topic:          topic,
 		syncSelections: syncsel,
+		cryptPassword:  cryptPassword,
 	}
 	broker, err := newBroker(server, topic, user, password, cafile, cli.subHandler)
 	if err != nil {
@@ -218,6 +228,7 @@ func main() {
 		app             = kingpin.New("clipsync", "Sync clipboard across machines")
 		optCAFile       = app.Flag("cafile", "CA certificates file").String()
 		optDebug        = app.Flag("debug", "Make verbose more verbose").Short('D').Bool()
+		optEncPassFile  = app.Flag("cryptpass-file", "Encryption password file").String()
 		optLogFile      = app.Flag("logfile", "Log file (stderr if not specified)").Short('L').String()
 		optMQTTDebug    = app.Flag("mqtt-debug", "Turn on MQTT debugging").Bool()
 		optNocolors     = app.Flag("no-colors", "No colors on log output to terminal.").Bool()
@@ -296,6 +307,16 @@ func main() {
 		password = strings.TrimRight(string(p), "\n")
 	}
 
+	// Encryption password.
+	var cryptPassword []byte
+	if *optEncPassFile != "" {
+		p, err := os.ReadFile(tildeExpand(*optEncPassFile))
+		if err != nil {
+			log.Fatal(err)
+		}
+		cryptPassword = []byte(strings.TrimRight(string(p), "\n"))
+	}
+
 	// Initialize redact object.
 	redact = redactType{*optRedactLevel}
 
@@ -309,12 +330,12 @@ func main() {
 
 	switch cmdline {
 	case pasteCmd.FullCommand():
-		if err := pastecmd(*optServer, *optTopic, *optUser, password, *optCAFile); err != nil {
+		if err := pastecmd(*optServer, *optTopic, *optUser, password, *optCAFile, cryptPassword); err != nil {
 			log.Fatal(err)
 		}
 
 	case copyCmd.FullCommand():
-		if err := copycmd(*optServer, *optTopic, *optUser, password, *optCAFile, *copyCmdFilter); err != nil {
+		if err := copycmd(*optServer, *optTopic, *optUser, password, *optCAFile, cryptPassword, *copyCmdFilter); err != nil {
 			log.Fatal(err)
 		}
 
@@ -323,7 +344,7 @@ func main() {
 		lock := singleInstanceOrDie(syncerLockFile)
 		defer lock.Unlock()
 
-		if err := clientcmd(*optServer, *optTopic, *optUser, password, *optCAFile, *clientPollTime, *clientCmdChromeQuirk, *clientCmdSyncSel); err != nil {
+		if err := clientcmd(*optServer, *optTopic, *optUser, password, *optCAFile, cryptPassword, *clientPollTime, *clientCmdChromeQuirk, *clientCmdSyncSel); err != nil {
 			log.Fatal(err)
 		}
 

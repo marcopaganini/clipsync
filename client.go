@@ -33,6 +33,7 @@ type client struct {
 	clipboard      string
 	topic          string
 	syncSelections bool
+	cryptPassword  []byte
 }
 
 func (x *client) setMemPrimary(value string) {
@@ -134,7 +135,17 @@ func (x *client) subHandler(broker mqtt.Client, msg mqtt.Message) {
 	defer log.Debugf("Leaving subHandler")
 
 	xprimary := x.getXPrimary("")
+
+	var err error
+
 	data := string(msg.Payload())
+	if len(x.cryptPassword) > 0 {
+		data, err = decrypt64(data, x.cryptPassword)
+		if err != nil {
+			log.Error(err)
+			return
+		}
+	}
 
 	log.Debugf("Received from server: %s", redact.redact(data))
 	log.Debugf("Current X primary selection: %s", redact.redact(xprimary))
@@ -180,6 +191,7 @@ func (x *client) subHandler(broker mqtt.Client, msg mqtt.Message) {
 // future version, which should allow us to simplify this function.
 func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chromeQuirk bool) {
 	var singleUnicode = regexp.MustCompile(`^[[:^ascii:]]$`)
+	var err error
 
 	for {
 		time.Sleep(time.Duration(pollTime) * time.Second)
@@ -203,8 +215,11 @@ func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chr
 
 		// Sync primary and clipboard, if requested. This will change the
 		// selections if sync is needed.
+
+		var pub string
+
 		if cli.syncSelections {
-			if err := syncClipsAndPublish(broker, topic, xprimary, cli.getXClipboard("text/plain"), cli); err != nil {
+			if pub, err = syncClips(broker, topic, xprimary, cli.getXClipboard("text/plain"), cli); err != nil {
 				log.Errorf("Error syncing selections (primary/clipboard): %v", err)
 			}
 		} else if memPrimary != xprimary {
@@ -212,35 +227,50 @@ func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chr
 			// if the X clipboard does not match our last memory clipboard (a
 			// change happened).
 			cli.setMemPrimary(xprimary)
-			publish(broker, topic, xprimary)
+			pub = xprimary
+		}
+
+		// Publish if needed.
+		if pub != "" {
+			publish(broker, topic, pub, cli.cryptPassword)
 		}
 	}
 }
 
 // publish publishes the given string to the desired topic.
-func publish(broker mqtt.Client, topic, s string) {
+func publish(broker mqtt.Client, topic, s string, cryptPassword []byte) {
 	// Set in-memory primary selection and publish to server.
 	log.Debugf("Publishing primary selection: %s", redact.redact(s))
+	defer log.Debugf("Publish done")
+
+	var err error
+	if len(cryptPassword) > 0 {
+		s, err = encrypt64(s, cryptPassword)
+		if err != nil {
+			log.Error(err)
+			return
+		}
+	}
+
 	if token := broker.Publish(topic, 0, true, s); token.Wait() && token.Error() != nil {
 		log.Errorf("Error publishing to server: %v", token.Error())
 	}
-	log.Debugf("Publish done")
 }
 
-// syncClipsAndPublish synchronize the primary selection to the clipboard (and vice-versa),
-// and publishes results (if needed).
-func syncClipsAndPublish(broker mqtt.Client, topic, xprimary, xclipboard string, cli *client) error {
+// syncClips synchronize the primary selection to the clipboard (and vice-versa),
+// and returns a non-blank string if it needs to be published.
+func syncClips(broker mqtt.Client, topic, xprimary, xclipboard string, cli *client) (string, error) {
 	var pub string
 
 	// Ignore blank returns as they could be an error in xclip or no
 	// content in the clipboard with the desired mime-type.
 	if xclipboard != "" && xclipboard != cli.getMemClipboard() {
-		log.Debugf("syncClipsAndPublish X clipboard: %s", redact.redact(xclipboard))
-		log.Debugf("syncClipsAndPublish mem primary: %s", redact.redact(cli.getMemPrimary()))
+		log.Debugf("syncClips X clipboard: %s", redact.redact(xclipboard))
+		log.Debugf("syncClips mem primary: %s", redact.redact(cli.getMemPrimary()))
 
 		log.Debugf("Syncing clipboard -> X PRIMARY and memory primary/clipboard")
 		if err := cli.setXPrimary(xclipboard); err != nil {
-			return err
+			return "", err
 		}
 		cli.setMemPrimary(xclipboard)
 		cli.setMemClipboard(xclipboard)
@@ -248,12 +278,12 @@ func syncClipsAndPublish(broker mqtt.Client, topic, xprimary, xclipboard string,
 
 		// X primary changed? Sync to memory and X clipboard.
 	} else if xprimary != "" && xprimary != cli.getMemPrimary() {
-		log.Debugf("syncClipsAndPublish X primary: %s", redact.redact(xprimary))
-		log.Debugf("syncClipsAndPublish mem clipboard: %s", redact.redact(cli.getMemClipboard()))
+		log.Debugf("syncClips X primary: %s", redact.redact(xprimary))
+		log.Debugf("syncClips mem clipboard: %s", redact.redact(cli.getMemClipboard()))
 
 		log.Debugf("Syncing primary -> X CLIPBOARD and memory primary/clipboard")
 		if err := cli.setXClipboard(xprimary); err != nil {
-			return err
+			return "", err
 		}
 		// primary changed, sync to clipboard.
 		cli.setMemPrimary(xprimary)
@@ -263,8 +293,7 @@ func syncClipsAndPublish(broker mqtt.Client, topic, xprimary, xclipboard string,
 
 	// Publish to server, if needed
 	if pub != "" {
-		log.Debugf("syncPrimaryAndClip publishing: %s", redact.redact(pub))
-		publish(broker, topic, pub)
+		log.Debugf("syncClips requesting publication of: %s", redact.redact(pub))
 	}
-	return nil
+	return pub, nil
 }

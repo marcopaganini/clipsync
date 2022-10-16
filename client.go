@@ -147,6 +147,11 @@ func (x *client) subHandler(broker mqtt.Client, msg mqtt.Message) {
 		}
 	}
 
+	if data == "" {
+		log.Debugf("Received zero-length data from server. Ignoring.")
+		return
+	}
+
 	log.Debugf("Received from server: %s", redact.redact(data))
 	log.Debugf("Current X primary selection: %s", redact.redact(xprimary))
 
@@ -199,6 +204,12 @@ func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chr
 		// Restore the primary selection to the saved value if it contains
 		// a single rune and chromeQuirk is set.
 		xprimary := cli.getXPrimary("")
+
+		// Do nothing on xclip error/empty clipboard.
+		if xprimary == "" {
+			continue
+		}
+
 		memPrimary := cli.getMemPrimary()
 
 		// Restore the memory clipboard if:

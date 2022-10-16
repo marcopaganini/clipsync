@@ -79,7 +79,8 @@ func (x *client) getXSelection(sel, mimetype string) string {
 	xclip := exec.CommandContext(ctx, "xclip", args...)
 	out, err := xclip.Output()
 	if err != nil {
-		log.Debugf("Error executing xclip: %v", err)
+		// Don't log anything here, as running xclip on an empty clipboard will
+		// return an error. This is a common and harmless occurrence.
 		return ""
 	}
 	return string(out)

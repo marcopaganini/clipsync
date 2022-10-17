@@ -200,7 +200,6 @@ func clientcmd(cfg globalConfig, cryptPassword []byte, polltime int, chromequirk
 	log.Infof("Starting client, server: %s", *cfg.server)
 
 	xsel := &xselection{}
-	cli := newClient(*cfg.topic, syncsel, cryptPassword)
 	hashcache := cache.New(24*time.Hour, 24*time.Hour)
 
 	broker, err := newBroker(cfg, func(client mqtt.Client, msg mqtt.Message) {
@@ -212,7 +211,7 @@ func clientcmd(cfg globalConfig, cryptPassword []byte, polltime int, chromequirk
 	}
 
 	// Loops forever sending any local clipboard changes to broker.
-	clientloop(broker, cli, xsel, *cfg.topic, polltime, chromequirk)
+	clientloop(broker, xsel, *cfg.topic, polltime, syncsel, chromequirk, cryptPassword)
 
 	// This should never happen.
 	return nil

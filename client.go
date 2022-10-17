@@ -9,7 +9,6 @@ import (
 	"crypto/md5"
 	"fmt"
 	"regexp"
-	"sync"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -20,25 +19,6 @@ import (
 const (
 	syncerLockFile = "/var/run/lock/clipsync-client.lock"
 )
-
-// client contains a representation of a MQTT client.
-type client struct {
-	sync.RWMutex
-	primary        string
-	clipboard      string
-	topic          string
-	syncSelections bool
-	cryptPassword  []byte
-}
-
-// newClient returns a new client with some sane defaults.
-func newClient(topic string, syncSelections bool, cryptPassword []byte) *client {
-	return &client{
-		topic:          topic,
-		syncSelections: syncSelections,
-		cryptPassword:  cryptPassword,
-	}
-}
 
 // subHandler is called by when new data is available and updates the
 // clipboard with the remote clipboard.
@@ -119,7 +99,7 @@ func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcach
 // Note: For now, reading and writing to the clipboard is somewhat of an
 // expensive operation as it requires calling xclip. This will be changed in a
 // future version, which should allow us to simplify this function.
-func clientloop(broker mqtt.Client, cli *client, xsel *xselection, topic string, pollTime int, chromeQuirk bool) {
+func clientloop(broker mqtt.Client, xsel *xselection, topic string, pollTime int, syncsel, chromeQuirk bool, cryptPassword []byte) {
 	var singleUnicode = regexp.MustCompile(`^[[:^ascii:]]$`)
 	var err error
 
@@ -154,8 +134,8 @@ func clientloop(broker mqtt.Client, cli *client, xsel *xselection, topic string,
 
 		var pub string
 
-		if cli.syncSelections {
-			if pub, err = syncClips(broker, cli, xsel, topic, xprimary, xsel.getXClipboard("text/plain")); err != nil {
+		if syncsel {
+			if pub, err = syncClips(broker, xsel, topic, xprimary, xsel.getXClipboard("text/plain")); err != nil {
 				log.Errorf("Error syncing selections (primary/clipboard): %v", err)
 			}
 		} else if memPrimary != xprimary {
@@ -168,7 +148,7 @@ func clientloop(broker mqtt.Client, cli *client, xsel *xselection, topic string,
 
 		// Publish if needed.
 		if pub != "" {
-			publish(broker, topic, pub, cli.cryptPassword)
+			publish(broker, topic, pub, cryptPassword)
 		}
 	}
 }
@@ -195,7 +175,7 @@ func publish(broker mqtt.Client, topic, s string, cryptPassword []byte) {
 
 // syncClips synchronize the primary selection to the clipboard (and vice-versa),
 // and returns a non-blank string if it needs to be published.
-func syncClips(broker mqtt.Client, cli *client, xsel *xselection, topic, xprimary, xclipboard string) (string, error) {
+func syncClips(broker mqtt.Client, xsel *xselection, topic, xprimary, xclipboard string) (string, error) {
 	var pub string
 
 	// Ignore blank returns as they could be an error in xclip or no

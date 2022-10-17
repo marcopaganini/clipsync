@@ -1,6 +1,18 @@
+# This is a user systemd unit for clipsync. It will start clipsync with the
+# parameters below, reading the global parameters from ~/.config/clipsync/config.
+# To use:
+# - Copy this file to $HOME/.config/systemd/user
+# - systemctl --user daemon-reload
+# - systemctl --user enable --now clipsync
+#
+# Use systemctl --user status clipsync to see if everything went OK.
+# journalctl --user -u clipsync -f will tail the log.
+
 [Unit]
 Description=Clipboard Syncer
 After=network.target
+# Restart forever on failure.
+StartLimitIntervalSec=0
 
 [Service]
 Type=exec

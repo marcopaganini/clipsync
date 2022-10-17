@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"crypto/md5"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/patrickmn/go-cache"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -34,6 +36,7 @@ type client struct {
 	topic          string
 	syncSelections bool
 	cryptPassword  []byte
+	cache          *cache.Cache
 }
 
 func (x *client) setMemPrimary(value string) {
@@ -129,6 +132,20 @@ func (x *client) getXClipboard(mimetype string) string {
 	return x.getXSelection(selClipboard, mimetype)
 }
 
+// newClient returns a new client with some sane defaults.
+func newClient(topic string, syncSelections bool, cryptPassword []byte) *client {
+	cli := &client{
+		topic:          topic,
+		syncSelections: syncSelections,
+		cryptPassword:  cryptPassword,
+	}
+
+	// Create a new cache with default duration and expiration of 24h.
+	cli.cache = cache.New(24*time.Hour, 24*time.Hour)
+
+	return cli
+}
+
 // subHandler is called by MQTT when new data is available and updates the
 // clipboard with the remote clipboard.
 func (x *client) subHandler(broker mqtt.Client, msg mqtt.Message) {
@@ -141,11 +158,24 @@ func (x *client) subHandler(broker mqtt.Client, msg mqtt.Message) {
 
 	data := string(msg.Payload())
 	if len(x.cryptPassword) > 0 {
+		// Ignore duplicate encrypted messages as they should never happen.
+		md5 := fmt.Sprintf("%x", md5.Sum(msg.Payload()))
+		if _, found := x.cache.Get(md5); found {
+			log.Warningf("Ignoring duplicate encrypted message: %s", data)
+			return
+		}
 		data, err = decrypt64(data, x.cryptPassword)
 		if err != nil {
 			log.Error(err)
 			return
 		}
+		if data == "" {
+			log.Debugf("Received zero-length encrypted payload from server. Ignoring.")
+			return
+		}
+		// At this point, we have a good encrypted message, so save the hash in
+		// the cache.
+		x.cache.Set(md5, true, cache.DefaultExpiration)
 	}
 
 	if data == "" {

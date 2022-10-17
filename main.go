@@ -30,6 +30,10 @@ const (
 	configFile = "~/.config/clipsync/config"
 )
 
+// BuildVersion Holds the current git HEAD version number.
+// This is filled in by the build process (make).
+var BuildVersion string
+
 // globalConfig holds the user global configurations as requested in the
 // command line or in the configuration file.
 type globalConfig struct {
@@ -47,9 +51,12 @@ type globalConfig struct {
 	verbose      *bool
 }
 
-// BuildVersion Holds the current git HEAD version number.
-// This is filled in by the build process (make).
-var BuildVersion string
+// clientConfig holds the options for the "client" operation.
+type clientConfig struct {
+	chromequirk *bool
+	syncsel     *bool
+	polltime    *int
+}
 
 // The redact object is used by other functions in this namespace.
 var redact redactType
@@ -190,7 +197,7 @@ func copycmd(cfg globalConfig, cryptPassword []byte, filter bool) error {
 
 // clientcmd activates "client" mode, syncing the local clipboard to the server
 // and vice-versa. This function will only return in case of error.
-func clientcmd(cfg globalConfig, cryptPassword []byte, polltime int, chromequirk, syncsel bool) error {
+func clientcmd(cfg globalConfig, clientcfg clientConfig, cryptPassword []byte) error {
 	// Client mode only makes sense if the DISPLAY environment
 	// variable is set (otherwise we don't have a clipboard to sync).
 	if os.Getenv("DISPLAY") == "" {
@@ -203,7 +210,7 @@ func clientcmd(cfg globalConfig, cryptPassword []byte, polltime int, chromequirk
 	hashcache := cache.New(24*time.Hour, 24*time.Hour)
 
 	broker, err := newBroker(cfg, func(client mqtt.Client, msg mqtt.Message) {
-		subHandler(client, msg, xsel, hashcache, syncsel, cryptPassword)
+		subHandler(client, msg, xsel, hashcache, *clientcfg.syncsel, cryptPassword)
 	})
 
 	if err != nil {
@@ -211,7 +218,7 @@ func clientcmd(cfg globalConfig, cryptPassword []byte, polltime int, chromequirk
 	}
 
 	// Loops forever sending any local clipboard changes to broker.
-	clientloop(broker, xsel, *cfg.topic, polltime, syncsel, chromequirk, cryptPassword)
+	clientloop(broker, xsel, clientcfg, *cfg.topic, cryptPassword)
 
 	// This should never happen.
 	return nil
@@ -292,9 +299,11 @@ func main() {
 
 	// Client
 	clientCmd := app.Command("client", "Connect to a server and sync clipboards.")
-	clientCmdChromeQuirk := clientCmd.Flag("fix-chrome-quirk", "Protect clipboard against one-character copies.").Bool()
-	clientCmdSyncSel := clientCmd.Flag("sync-selections", "Synchonize primary (middle mouse) and clipboard (Ctrl-C/V).").Short('S').Bool()
-	clientPollTime := app.Flag("poll-time", "Time between clipboard reads (in seconds)").Short('P').Default("1").Int()
+	clientcfg := clientConfig{
+		chromequirk: clientCmd.Flag("fix-chrome-quirk", "Protect clipboard against one-character copies.").Bool(),
+		syncsel:     clientCmd.Flag("sync-selections", "Synchonize primary (middle mouse) and clipboard (Ctrl-C/V).").Short('S').Bool(),
+		polltime:    app.Flag("poll-time", "Time between clipboard reads (in seconds)").Short('P').Default("1").Int(),
+	}
 
 	// Copy
 	copyCmd := app.Command("copy", "Send contents of stdin to all clipboards.")
@@ -358,7 +367,7 @@ func main() {
 		lock := singleInstanceOrDie(syncerLockFile)
 		defer lock.Unlock()
 
-		if err := clientcmd(cfg, cryptPassword, *clientPollTime, *clientCmdChromeQuirk, *clientCmdSyncSel); err != nil {
+		if err := clientcmd(cfg, clientcfg, cryptPassword); err != nil {
 			log.Fatal(err)
 		}
 

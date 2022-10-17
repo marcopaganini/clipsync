@@ -99,12 +99,12 @@ func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcach
 // Note: For now, reading and writing to the clipboard is somewhat of an
 // expensive operation as it requires calling xclip. This will be changed in a
 // future version, which should allow us to simplify this function.
-func clientloop(broker mqtt.Client, xsel *xselection, topic string, pollTime int, syncsel, chromeQuirk bool, cryptPassword []byte) {
+func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, topic string, cryptPassword []byte) {
 	var singleUnicode = regexp.MustCompile(`^[[:^ascii:]]$`)
 	var err error
 
 	for {
-		time.Sleep(time.Duration(pollTime) * time.Second)
+		time.Sleep(time.Duration(*clientcfg.polltime) * time.Second)
 
 		// Restore the primary selection to the saved value if it contains
 		// a single rune and chromeQuirk is set.
@@ -121,7 +121,7 @@ func clientloop(broker mqtt.Client, xsel *xselection, topic string, pollTime int
 		// 1) chromeQuirk is set and
 		// 2) The X clipboard contains a single unicode characters and
 		// 3) memClipboard does NOT contain a single unicode character (avoid loops).
-		if chromeQuirk && singleUnicode.MatchString(xprimary) && !singleUnicode.MatchString(memPrimary) {
+		if *clientcfg.chromequirk && singleUnicode.MatchString(xprimary) && !singleUnicode.MatchString(memPrimary) {
 			log.Debugf("Chrome quirk detected. Restoring primary to %s", redact.redact(memPrimary))
 			xprimary = memPrimary
 			if err := xsel.setXPrimary(memPrimary); err != nil {
@@ -134,7 +134,7 @@ func clientloop(broker mqtt.Client, xsel *xselection, topic string, pollTime int
 
 		var pub string
 
-		if syncsel {
+		if *clientcfg.syncsel {
 			if pub, err = syncClips(broker, xsel, topic, xprimary, xsel.getXClipboard("text/plain")); err != nil {
 				log.Errorf("Error syncing selections (primary/clipboard): %v", err)
 			}

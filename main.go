@@ -19,6 +19,7 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/fredli74/lockfile"
 	"github.com/google/uuid"
+	"github.com/patrickmn/go-cache"
 	log "github.com/sirupsen/logrus"
 
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -197,14 +198,21 @@ func clientcmd(cfg globalConfig, cryptPassword []byte, polltime int, chromequirk
 	}
 
 	log.Infof("Starting client, server: %s", *cfg.server)
+
+	xsel := &xselection{}
 	cli := newClient(*cfg.topic, syncsel, cryptPassword)
-	broker, err := newBroker(cfg, cli.subHandler)
+	hashcache := cache.New(24*time.Hour, 24*time.Hour)
+
+	broker, err := newBroker(cfg, func(client mqtt.Client, msg mqtt.Message) {
+		subHandler(client, msg, xsel, hashcache, syncsel, cryptPassword)
+	})
+
 	if err != nil {
 		log.Fatalf("Unable to connect to broker: %v", err)
 	}
 
 	// Loops forever sending any local clipboard changes to broker.
-	clientloop(broker, *cfg.topic, polltime, cli, chromequirk)
+	clientloop(broker, cli, xsel, *cfg.topic, polltime, chromequirk)
 
 	// This should never happen.
 	return nil

@@ -6,10 +6,8 @@
 package main
 
 import (
-	"context"
 	"crypto/md5"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"sync"
 	"time"
@@ -21,11 +19,6 @@ import (
 
 const (
 	syncerLockFile = "/var/run/lock/clipsync-client.lock"
-	// Clipboard Selection Types.
-	selPrimary   = "primary"
-	selClipboard = "clipboard"
-	// Timeout when running xclip, in ms.
-	xclipTimeout = 1500
 )
 
 // client contains a representation of a MQTT client.
@@ -36,135 +29,36 @@ type client struct {
 	topic          string
 	syncSelections bool
 	cryptPassword  []byte
-	cache          *cache.Cache
-}
-
-func (x *client) setMemPrimary(value string) {
-	x.Lock()
-	x.primary = value
-	x.Unlock()
-}
-
-func (x *client) setMemClipboard(value string) {
-	x.Lock()
-	x.clipboard = value
-	x.Unlock()
-}
-
-func (x *client) getMemPrimary() string {
-	x.Lock()
-	v := x.primary
-	x.Unlock()
-	return v
-}
-func (x *client) getMemClipboard() string {
-	x.Lock()
-	v := x.clipboard
-	x.Unlock()
-	return v
-}
-
-// getXSelection returns the contents of the chosen X selection.
-func (x *client) getXSelection(sel, mimetype string) string {
-	x.Lock()
-	defer x.Unlock()
-
-	// xclip will return an error on an empty clipboard, but
-	// there's no portable way to fetch the return code. Being
-	// that the case, we'll just ignore those (TODO: Fix this).
-	args := []string{"-selection", sel, "-o"}
-	if mimetype != "" {
-		args = append(args, "-t", mimetype)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), xclipTimeout*time.Millisecond)
-	defer cancel()
-
-	xclip := exec.CommandContext(ctx, "xclip", args...)
-	out, err := xclip.Output()
-	if err != nil {
-		// Don't log anything here, as running xclip on an empty clipboard will
-		// return an error. This is a common and harmless occurrence.
-		return ""
-	}
-	return string(out)
-}
-
-// setXSelection sets the contents of the chosen X selection.
-func (x *client) setXSelection(sel string, contents string) error {
-	x.Lock()
-	defer x.Unlock()
-
-	ctx, cancel := context.WithTimeout(context.Background(), xclipTimeout*time.Millisecond)
-	defer cancel()
-
-	xclip := exec.CommandContext(ctx, "xclip", "-selection", sel, "-i")
-	stdin, err := xclip.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("Error reading xclip stdin: %v", err)
-	}
-	xclip.Start()
-
-	if _, err = stdin.Write([]byte(contents)); err != nil {
-		return err
-	}
-	stdin.Close()
-	xclip.Wait()
-
-	log.Debugf("Set selection(%s) to: %s", sel, redact.redact(contents))
-	return nil
-}
-
-// Syntactic sugar functions to access the X clipboard.
-
-func (x *client) setXClipboard(contents string) error {
-	return x.setXSelection(selClipboard, contents)
-}
-
-func (x *client) setXPrimary(contents string) error {
-	return x.setXSelection(selPrimary, contents)
-}
-
-func (x *client) getXPrimary(mimetype string) string {
-	return x.getXSelection(selPrimary, mimetype)
-}
-
-func (x *client) getXClipboard(mimetype string) string {
-	return x.getXSelection(selClipboard, mimetype)
 }
 
 // newClient returns a new client with some sane defaults.
 func newClient(topic string, syncSelections bool, cryptPassword []byte) *client {
-	cli := &client{
+	return &client{
 		topic:          topic,
 		syncSelections: syncSelections,
 		cryptPassword:  cryptPassword,
 	}
-
-	// Create a new cache with default duration and expiration of 24h.
-	cli.cache = cache.New(24*time.Hour, 24*time.Hour)
-
-	return cli
 }
 
-// subHandler is called by MQTT when new data is available and updates the
+// subHandler is called by when new data is available and updates the
 // clipboard with the remote clipboard.
-func (x *client) subHandler(broker mqtt.Client, msg mqtt.Message) {
+func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcache *cache.Cache, syncsel bool, cryptPassword []byte) {
 	log.Debugf("Entering subHandler")
 	defer log.Debugf("Leaving subHandler")
 
-	xprimary := x.getXPrimary("")
+	xprimary := xsel.getXPrimary("")
 
 	var err error
 
 	data := string(msg.Payload())
-	if len(x.cryptPassword) > 0 {
+	if len(cryptPassword) > 0 {
 		// Ignore duplicate encrypted messages as they should never happen.
 		md5 := fmt.Sprintf("%x", md5.Sum(msg.Payload()))
-		if _, found := x.cache.Get(md5); found {
+		if _, found := hashcache.Get(md5); found {
 			log.Warningf("Ignoring duplicate encrypted message: %s", data)
 			return
 		}
-		data, err = decrypt64(data, x.cryptPassword)
+		data, err = decrypt64(data, cryptPassword)
 		if err != nil {
 			log.Error(err)
 			return
@@ -175,7 +69,7 @@ func (x *client) subHandler(broker mqtt.Client, msg mqtt.Message) {
 		}
 		// At this point, we have a good encrypted message, so save the hash in
 		// the cache.
-		x.cache.Set(md5, true, cache.DefaultExpiration)
+		hashcache.Set(md5, true, cache.DefaultExpiration)
 	}
 
 	if data == "" {
@@ -195,17 +89,17 @@ func (x *client) subHandler(broker mqtt.Client, msg mqtt.Message) {
 	// This function only gets called if we have real data available, so we can
 	// set the primary and memory clipboards directly if we have changes.
 	log.Debugf("Server data != Current X primary selection. Writing to primary.")
-	if err := x.setXPrimary(data); err != nil {
+	if err := xsel.setXPrimary(data); err != nil {
 		log.Errorf("Unable to set X Primary selection: %v", err)
 	}
-	x.setMemPrimary(data)
+	xsel.setMemPrimary(data)
 
-	if x.syncSelections && x.getXClipboard("text/plain") != data {
+	if syncsel && xsel.getXClipboard("text/plain") != data {
 		log.Debugf("Primary <-> Clipboard sync requested. Setting clipboard.")
-		if err := x.setXClipboard(data); err != nil {
+		if err := xsel.setXClipboard(data); err != nil {
 			log.Errorf("Unable to set X Clipboard: %v", err)
 		}
-		x.setMemClipboard(data)
+		xsel.setMemClipboard(data)
 	}
 }
 
@@ -225,7 +119,7 @@ func (x *client) subHandler(broker mqtt.Client, msg mqtt.Message) {
 // Note: For now, reading and writing to the clipboard is somewhat of an
 // expensive operation as it requires calling xclip. This will be changed in a
 // future version, which should allow us to simplify this function.
-func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chromeQuirk bool) {
+func clientloop(broker mqtt.Client, cli *client, xsel *xselection, topic string, pollTime int, chromeQuirk bool) {
 	var singleUnicode = regexp.MustCompile(`^[[:^ascii:]]$`)
 	var err error
 
@@ -234,14 +128,14 @@ func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chr
 
 		// Restore the primary selection to the saved value if it contains
 		// a single rune and chromeQuirk is set.
-		xprimary := cli.getXPrimary("")
+		xprimary := xsel.getXPrimary("")
 
 		// Do nothing on xclip error/empty clipboard.
 		if xprimary == "" {
 			continue
 		}
 
-		memPrimary := cli.getMemPrimary()
+		memPrimary := xsel.getMemPrimary()
 
 		// Restore the memory clipboard if:
 		// 1) chromeQuirk is set and
@@ -250,7 +144,7 @@ func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chr
 		if chromeQuirk && singleUnicode.MatchString(xprimary) && !singleUnicode.MatchString(memPrimary) {
 			log.Debugf("Chrome quirk detected. Restoring primary to %s", redact.redact(memPrimary))
 			xprimary = memPrimary
-			if err := cli.setXPrimary(memPrimary); err != nil {
+			if err := xsel.setXPrimary(memPrimary); err != nil {
 				log.Errorf("Cannot write to primary selection: %v", err)
 			}
 		}
@@ -261,14 +155,14 @@ func clientloop(broker mqtt.Client, topic string, pollTime int, cli *client, chr
 		var pub string
 
 		if cli.syncSelections {
-			if pub, err = syncClips(broker, topic, xprimary, cli.getXClipboard("text/plain"), cli); err != nil {
+			if pub, err = syncClips(broker, cli, xsel, topic, xprimary, xsel.getXClipboard("text/plain")); err != nil {
 				log.Errorf("Error syncing selections (primary/clipboard): %v", err)
 			}
 		} else if memPrimary != xprimary {
 			// If no sync between primary and clipboard requested, Only publish
 			// if the X clipboard does not match our last memory clipboard (a
 			// change happened).
-			cli.setMemPrimary(xprimary)
+			xsel.setMemPrimary(xprimary)
 			pub = xprimary
 		}
 
@@ -301,35 +195,35 @@ func publish(broker mqtt.Client, topic, s string, cryptPassword []byte) {
 
 // syncClips synchronize the primary selection to the clipboard (and vice-versa),
 // and returns a non-blank string if it needs to be published.
-func syncClips(broker mqtt.Client, topic, xprimary, xclipboard string, cli *client) (string, error) {
+func syncClips(broker mqtt.Client, cli *client, xsel *xselection, topic, xprimary, xclipboard string) (string, error) {
 	var pub string
 
 	// Ignore blank returns as they could be an error in xclip or no
 	// content in the clipboard with the desired mime-type.
-	if xclipboard != "" && xclipboard != cli.getMemClipboard() {
+	if xclipboard != "" && xclipboard != xsel.getMemClipboard() {
 		log.Debugf("syncClips X clipboard: %s", redact.redact(xclipboard))
-		log.Debugf("syncClips mem primary: %s", redact.redact(cli.getMemPrimary()))
+		log.Debugf("syncClips mem primary: %s", redact.redact(xsel.getMemPrimary()))
 
 		log.Debugf("Syncing clipboard -> X PRIMARY and memory primary/clipboard")
-		if err := cli.setXPrimary(xclipboard); err != nil {
+		if err := xsel.setXPrimary(xclipboard); err != nil {
 			return "", err
 		}
-		cli.setMemPrimary(xclipboard)
-		cli.setMemClipboard(xclipboard)
+		xsel.setMemPrimary(xclipboard)
+		xsel.setMemClipboard(xclipboard)
 		pub = xclipboard
 
 		// X primary changed? Sync to memory and X clipboard.
-	} else if xprimary != "" && xprimary != cli.getMemPrimary() {
+	} else if xprimary != "" && xprimary != xsel.getMemPrimary() {
 		log.Debugf("syncClips X primary: %s", redact.redact(xprimary))
-		log.Debugf("syncClips mem clipboard: %s", redact.redact(cli.getMemClipboard()))
+		log.Debugf("syncClips mem clipboard: %s", redact.redact(xsel.getMemClipboard()))
 
 		log.Debugf("Syncing primary -> X CLIPBOARD and memory primary/clipboard")
-		if err := cli.setXClipboard(xprimary); err != nil {
+		if err := xsel.setXClipboard(xprimary); err != nil {
 			return "", err
 		}
 		// primary changed, sync to clipboard.
-		cli.setMemPrimary(xprimary)
-		cli.setMemClipboard(xprimary)
+		xsel.setMemPrimary(xprimary)
+		xsel.setMemClipboard(xprimary)
 		pub = xprimary
 	}
 

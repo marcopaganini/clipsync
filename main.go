@@ -32,18 +32,18 @@ const (
 // globalConfig holds the user global configurations as requested in the
 // command line or in the configuration file.
 type globalConfig struct {
-	cafile       string
-	debug        bool
-	encpassfile  string
-	mqttdebug    bool
-	nocolors     bool
-	password     string
-	passwordfile string
-	redactlevel  int
-	server       string
-	topic        string
-	user         string
-	verbose      bool
+	cafile       *string
+	debug        *bool
+	encpassfile  *string
+	mqttdebug    *bool
+	nocolors     *bool
+	password     *string
+	passwordfile *string
+	redactlevel  *int
+	server       *string
+	topic        *string
+	user         *string
+	verbose      *bool
 }
 
 // BuildVersion Holds the current git HEAD version number.
@@ -54,12 +54,12 @@ var BuildVersion string
 var redact redactType
 
 func newBroker(cfg globalConfig, handler func(client mqtt.Client, msg mqtt.Message)) (mqtt.Client, error) {
-	tlsconfig, err := newTLSConfig(cfg.cafile)
+	tlsconfig, err := newTLSConfig(*cfg.cafile)
 	if err != nil {
 		return nil, err
 	}
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(cfg.server)
+	opts.AddBroker(*cfg.server)
 
 	// Client ID must be unique.
 	id := uuid.New()
@@ -72,11 +72,11 @@ func newBroker(cfg globalConfig, handler func(client mqtt.Client, msg mqtt.Messa
 	opts.SetPingTimeout(2 * time.Second)
 	opts.SetAutoReconnect(true)
 
-	if cfg.user != "" {
-		opts.SetUsername(cfg.user)
+	if *cfg.user != "" {
+		opts.SetUsername(*cfg.user)
 	}
-	if cfg.password != "" {
-		opts.SetPassword(cfg.password)
+	if *cfg.password != "" {
+		opts.SetPassword(*cfg.password)
 	}
 
 	// If handler is present, assume we'll subscribe to a topic. In this case,
@@ -85,9 +85,9 @@ func newBroker(cfg globalConfig, handler func(client mqtt.Client, msg mqtt.Messa
 	// receiving messages from the topic after an automatic reconnect.
 	if handler != nil {
 		opts.SetOnConnectHandler(func(onconn mqtt.Client) {
-			log.Debugf("Connection detected. Subscribing to topic: %q", cfg.topic)
-			if token := onconn.Subscribe(cfg.topic, 0, handler); token.Wait() && token.Error() != nil {
-				log.Errorf("Unable to subscribe to topic %s: %v", cfg.topic, token.Error())
+			log.Debugf("Connection detected. Subscribing to topic: %q", *cfg.topic)
+			if token := onconn.Subscribe(*cfg.topic, 0, handler); token.Wait() && token.Error() != nil {
+				log.Errorf("Unable to subscribe to topic %s: %v", *cfg.topic, token.Error())
 			}
 		})
 	}
@@ -152,7 +152,6 @@ func pastecmd(cfg globalConfig, cryptPassword []byte) error {
 
 		log.Debugf("Received from server: %s", redact.redact(data))
 		ch <- data
-		return
 	})
 	if err != nil {
 		return fmt.Errorf("Unable to connect to broker: %v", err)
@@ -181,7 +180,7 @@ func copycmd(cfg globalConfig, cryptPassword []byte, filter bool) error {
 	spub := string(pub)
 
 	log.Debugf("Sending from stdin to broker: %s", redact.redact(spub))
-	publish(broker, cfg.topic, spub, cryptPassword)
+	publish(broker, *cfg.topic, spub, cryptPassword)
 	if filter {
 		fmt.Print(spub)
 	}
@@ -197,19 +196,15 @@ func clientcmd(cfg globalConfig, cryptPassword []byte, polltime int, chromequirk
 		return fmt.Errorf("Client mode requires the DISPLAY variable to be set")
 	}
 
-	log.Infof("Starting client, server: %s", cfg.server)
-	cli := &client{
-		topic:          cfg.topic,
-		syncSelections: syncsel,
-		cryptPassword:  cryptPassword,
-	}
+	log.Infof("Starting client, server: %s", *cfg.server)
+	cli := newClient(*cfg.topic, syncsel, cryptPassword)
 	broker, err := newBroker(cfg, cli.subHandler)
 	if err != nil {
 		log.Fatalf("Unable to connect to broker: %v", err)
 	}
 
 	// Loops forever sending any local clipboard changes to broker.
-	clientloop(broker, cfg.topic, polltime, cli, chromequirk)
+	clientloop(broker, *cfg.topic, polltime, cli, chromequirk)
 
 	// This should never happen.
 	return nil
@@ -256,37 +251,36 @@ func configLogging(cfg globalConfig) {
 		logFormat.DisableTimestamp = true
 	}
 
-	if cfg.verbose {
+	if *cfg.verbose {
 		log.SetLevel(log.DebugLevel)
-		if cfg.debug {
+		if *cfg.debug {
 			log.SetReportCaller(true)
 		}
 	}
 
-	if cfg.nocolors {
+	if *cfg.nocolors {
 		logFormat.DisableColors = true
 	}
 	log.SetFormatter(logFormat)
 }
 
 func main() {
-
 	// General flags
 	app := kingpin.New("clipsync", "Sync clipboard across machines")
 
 	cfg := globalConfig{
-		cafile:       *app.Flag("cafile", "CA certificates file").String(),
-		debug:        *app.Flag("debug", "Make verbose more verbose").Short('D').Bool(),
-		encpassfile:  *app.Flag("cryptpass-file", "Encryption password file").String(),
-		mqttdebug:    *app.Flag("mqtt-debug", "Turn on MQTT debugging").Bool(),
-		nocolors:     *app.Flag("no-colors", "No colors on log output to terminal.").Bool(),
-		password:     *app.Flag("password", "MQTT password").Short('p').String(),
-		passwordfile: *app.Flag("password-file", "File containing the MQTT password").String(),
-		redactlevel:  *app.Flag("redact-level", "Max number of characters to show on redacted messages").Int(),
-		server:       *app.Flag("server", "MQTT broker URL. E.g. ssl://ip:port.").Short('s').Required().String(),
-		topic:        *app.Flag("topic", "MQTT topic").Short('t').Default("clipsync").String(),
-		user:         *app.Flag("user", "MQTT user").Short('u').String(),
-		verbose:      *app.Flag("verbose", "Verbose mode.").Short('v').Bool(),
+		cafile:       app.Flag("cafile", "CA certificates file").String(),
+		debug:        app.Flag("debug", "Make verbose more verbose").Short('D').Bool(),
+		encpassfile:  app.Flag("cryptpass-file", "Encryption password file").String(),
+		mqttdebug:    app.Flag("mqtt-debug", "Turn on MQTT debugging").Bool(),
+		nocolors:     app.Flag("no-colors", "No colors on log output to terminal.").Bool(),
+		password:     app.Flag("password", "MQTT password").Short('p').String(),
+		passwordfile: app.Flag("password-file", "File containing the MQTT password").String(),
+		redactlevel:  app.Flag("redact-level", "Max number of characters to show on redacted messages").Int(),
+		server:       app.Flag("server", "MQTT broker URL. E.g. ssl://ip:port.").Short('s').Required().String(),
+		topic:        app.Flag("topic", "MQTT topic").Short('t').Default("clipsync").String(),
+		user:         app.Flag("user", "MQTT user").Short('u').String(),
+		verbose:      app.Flag("verbose", "Verbose mode.").Short('v').Bool(),
 	}
 
 	// Client
@@ -312,18 +306,18 @@ func main() {
 	configLogging(cfg)
 
 	// Read password from file, if requested.
-	if cfg.passwordfile != "" {
-		p, err := os.ReadFile(tildeExpand(cfg.passwordfile))
+	if *cfg.passwordfile != "" {
+		p, err := os.ReadFile(tildeExpand(*cfg.passwordfile))
 		if err != nil {
 			log.Fatal(err)
 		}
-		cfg.password = strings.TrimRight(string(p), "\n")
+		*cfg.password = strings.TrimRight(string(p), "\n")
 	}
 
 	// Encryption password.
 	var cryptPassword []byte
-	if cfg.encpassfile != "" {
-		p, err := os.ReadFile(tildeExpand(cfg.encpassfile))
+	if *cfg.encpassfile != "" {
+		p, err := os.ReadFile(tildeExpand(*cfg.encpassfile))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -331,10 +325,10 @@ func main() {
 	}
 
 	// Initialize redact object.
-	redact = redactType{cfg.redactlevel}
+	redact = redactType{*cfg.redactlevel}
 
 	// MQTT debugging
-	if cfg.mqttdebug {
+	if *cfg.mqttdebug {
 		mqtt.DEBUG = log.New()
 		mqtt.ERROR = log.New()
 		mqtt.CRITICAL = log.New()

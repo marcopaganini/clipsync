@@ -91,13 +91,17 @@ func (x *xselection) setXSelection(sel string, contents string) error {
 	if err != nil {
 		return fmt.Errorf("Error reading xclip stdin: %v", err)
 	}
-	xclip.Start()
+	if err := xclip.Start(); err != nil {
+		return fmt.Errorf("Error starting xclip: %v", err)
+	}
 
 	if _, err = stdin.Write([]byte(contents)); err != nil {
 		return err
 	}
 	stdin.Close()
-	xclip.Wait()
+	if err = xclip.Wait(); err != nil {
+		return fmt.Errorf("Error waiting for xclip: %v", err)
+	}
 
 	log.Debugf("Set selection(%s) to: %s", sel, redact.redact(contents))
 	return nil

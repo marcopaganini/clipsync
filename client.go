@@ -6,6 +6,7 @@ package main
 import (
 	"crypto/md5"
 	"fmt"
+	"os"
 	"regexp"
 	"time"
 
@@ -17,6 +18,35 @@ import (
 const (
 	syncerLockFile = "/var/run/lock/clipsync-client.lock"
 )
+
+// clientcmd activates "client" mode, syncing the local clipboard to the server
+// and vice-versa. This function will only return in case of error.
+func clientcmd(cfg globalConfig, clientcfg clientConfig, cryptPassword []byte) error {
+	// Client mode only makes sense if the DISPLAY environment
+	// variable is set (otherwise we don't have a clipboard to sync).
+	if os.Getenv("DISPLAY") == "" {
+		return fmt.Errorf("Client mode requires the DISPLAY variable to be set")
+	}
+
+	log.Infof("Starting client, server: %s", *cfg.server)
+
+	xsel := &xselection{}
+	hashcache := cache.New(24*time.Hour, 24*time.Hour)
+
+	broker, err := newBroker(cfg, func(client mqtt.Client, msg mqtt.Message) {
+		subHandler(client, msg, xsel, hashcache, *clientcfg.syncsel, cryptPassword)
+	})
+
+	if err != nil {
+		log.Fatalf("Unable to connect to broker: %v", err)
+	}
+
+	// Loops forever sending any local clipboard changes to broker.
+	clientloop(broker, xsel, clientcfg, *cfg.topic, cryptPassword)
+
+	// This should never happen.
+	return nil
+}
 
 // subHandler is called by when new data is available and updates the
 // clipboard with the remote clipboard.

@@ -4,20 +4,13 @@
 package main
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/fredli74/lockfile"
-	"github.com/google/uuid"
-	"github.com/patrickmn/go-cache"
 	log "github.com/sirupsen/logrus"
 
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -59,169 +52,6 @@ type clientConfig struct {
 // The redact object is used by other functions in this namespace.
 var redact redactType
 
-func newBroker(cfg globalConfig, handler func(client mqtt.Client, msg mqtt.Message)) (mqtt.Client, error) {
-	tlsconfig, err := newTLSConfig(*cfg.cafile)
-	if err != nil {
-		return nil, err
-	}
-	opts := mqtt.NewClientOptions()
-	opts.AddBroker(*cfg.server)
-
-	// Client ID must be unique.
-	id := uuid.New()
-	clientID := "clipsync-" + id.String()
-	opts.SetClientID(clientID)
-	log.Debugf("Set MQTT Client ID to %v", clientID)
-
-	opts.SetKeepAlive(4 * time.Second)
-	opts.SetTLSConfig(tlsconfig)
-	opts.SetPingTimeout(2 * time.Second)
-	opts.SetAutoReconnect(true)
-
-	if *cfg.user != "" {
-		opts.SetUsername(*cfg.user)
-	}
-	if *cfg.password != "" {
-		opts.SetPassword(*cfg.password)
-	}
-
-	// If handler is present, assume we'll subscribe to a topic. In this case,
-	// set OnConnectHandler to re-subscribe every time we have a connection.
-	// This, together with SetAutoReconnect guarantees that we'll keep
-	// receiving messages from the topic after an automatic reconnect.
-	if handler != nil {
-		opts.SetOnConnectHandler(func(onconn mqtt.Client) {
-			log.Debugf("Connection detected. Subscribing to topic: %q", *cfg.topic)
-			if token := onconn.Subscribe(*cfg.topic, 0, handler); token.Wait() && token.Error() != nil {
-				log.Errorf("Unable to subscribe to topic %s: %v", *cfg.topic, token.Error())
-			}
-		})
-	}
-
-	c := mqtt.NewClient(opts)
-	if token := c.Connect(); token.Wait() && token.Error() != nil {
-		return nil, token.Error()
-	}
-
-	return c, nil
-}
-
-func newTLSConfig(cafile string) (*tls.Config, error) {
-	// Create tls.Config with desired tls properties
-	ret := &tls.Config{
-		ClientAuth: tls.NoClientCert,
-		// ClientCAs = certs used to validate client cert.
-		ClientCAs: nil,
-		// InsecureSkipVerify = Cert contents must match server, IP, host, etc.
-		//InsecureSkipVerify: true,
-	}
-	if cafile != "" {
-		certpool := x509.NewCertPool()
-		pemCerts, err := os.ReadFile(cafile)
-		if err == nil {
-			certpool.AppendCertsFromPEM(pemCerts)
-		}
-		ret.RootCAs = certpool
-	}
-	return ret, nil
-}
-
-// singleInstanceOrDie guarantees that this is the only instance of
-// this program using the specified lockfile. Caller must call
-// Unlock on the returned lock once it's not needed anymore.
-func singleInstanceOrDie(lckfile string) *lockfile.LockFile {
-	lock, err := lockfile.Lock(lckfile)
-	if err != nil {
-		log.Fatalf("Another instance is already running.")
-	}
-	return lock
-}
-
-// pastecmd prints the first message from the server (all messages are sent
-// with persist).
-func pastecmd(cfg globalConfig, cryptPassword []byte) error {
-	log.Debug("Got paste command")
-	ch := make(chan string)
-
-	broker, err := newBroker(cfg, func(client mqtt.Client, msg mqtt.Message) {
-		var err error
-
-		data := string(msg.Payload())
-
-		if len(cryptPassword) > 0 {
-			data, err = decrypt64(data, cryptPassword)
-			if err != nil {
-				log.Error(err)
-				data = ""
-			}
-		}
-
-		log.Debugf("Received from server: %s", redact.redact(data))
-		ch <- data
-	})
-	if err != nil {
-		return fmt.Errorf("Unable to connect to broker: %v", err)
-	}
-
-	// Wait for read return
-	spub := <-ch
-	fmt.Print(spub)
-	broker.Disconnect(1)
-
-	return nil
-}
-
-// copycmd reads the stdin and sends it to the broker (server).
-func copycmd(cfg globalConfig, cryptPassword []byte, filter bool) error {
-	log.Debug("Got copy command")
-	broker, err := newBroker(cfg, nil)
-	if err != nil {
-		return fmt.Errorf("Unable to connect to broker: %v", err)
-	}
-	pub, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		return fmt.Errorf("Unable to read data from stdin: %v", err)
-	}
-	defer broker.Disconnect(1)
-	spub := string(pub)
-
-	log.Debugf("Sending from stdin to broker: %s", redact.redact(spub))
-	publish(broker, *cfg.topic, spub, cryptPassword)
-	if filter {
-		fmt.Print(spub)
-	}
-	return nil
-}
-
-// clientcmd activates "client" mode, syncing the local clipboard to the server
-// and vice-versa. This function will only return in case of error.
-func clientcmd(cfg globalConfig, clientcfg clientConfig, cryptPassword []byte) error {
-	// Client mode only makes sense if the DISPLAY environment
-	// variable is set (otherwise we don't have a clipboard to sync).
-	if os.Getenv("DISPLAY") == "" {
-		return fmt.Errorf("Client mode requires the DISPLAY variable to be set")
-	}
-
-	log.Infof("Starting client, server: %s", *cfg.server)
-
-	xsel := &xselection{}
-	hashcache := cache.New(24*time.Hour, 24*time.Hour)
-
-	broker, err := newBroker(cfg, func(client mqtt.Client, msg mqtt.Message) {
-		subHandler(client, msg, xsel, hashcache, *clientcfg.syncsel, cryptPassword)
-	})
-
-	if err != nil {
-		log.Fatalf("Unable to connect to broker: %v", err)
-	}
-
-	// Loops forever sending any local clipboard changes to broker.
-	clientloop(broker, xsel, clientcfg, *cfg.topic, cryptPassword)
-
-	// This should never happen.
-	return nil
-}
-
 // insertConfigFile checks for the existence of a configuration file and
 // inserts it as @file before the command line arguments. This causes kingpin
 // to read the contents of this file as arguments.
@@ -231,19 +61,6 @@ func insertConfigFile(args []string, configFile string) []string {
 	}
 	log.Debugf("Using %q as config file", configFile)
 	return append([]string{"@" + configFile}, args...)
-}
-
-// tildeExpand expands the tilde at the beginning of a filename to $HOME.
-func tildeExpand(path string) string {
-	if !strings.HasPrefix(path, "~/") {
-		return path
-	}
-	dirname, err := os.UserHomeDir()
-	if err != nil {
-		log.Errorf("Unable to locate homedir when expanding: %q", path)
-		return path
-	}
-	return filepath.Join(dirname, path[2:])
 }
 
 // configLogging configures the logging parameters from the command line

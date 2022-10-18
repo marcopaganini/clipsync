@@ -5,8 +5,13 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/fredli74/lockfile"
+	log "github.com/sirupsen/logrus"
 )
 
 // Show at most this number of characters on a redacted string
@@ -38,4 +43,28 @@ func (x redactType) redact(s string) string {
 func strquote(s string) string {
 	ret := strings.ReplaceAll(strconv.Quote(s), `\"`, `"`)
 	return ret[1 : len(ret)-1]
+}
+
+// singleInstanceOrDie guarantees that this is the only instance of
+// this program using the specified lockfile. Caller must call
+// Unlock on the returned lock once it's not needed anymore.
+func singleInstanceOrDie(lckfile string) *lockfile.LockFile {
+	lock, err := lockfile.Lock(lckfile)
+	if err != nil {
+		log.Fatalf("Another instance is already running.")
+	}
+	return lock
+}
+
+// tildeExpand expands the tilde at the beginning of a filename to $HOME.
+func tildeExpand(path string) string {
+	if !strings.HasPrefix(path, "~/") {
+		return path
+	}
+	dirname, err := os.UserHomeDir()
+	if err != nil {
+		log.Errorf("Unable to locate homedir when expanding: %q", path)
+		return path
+	}
+	return filepath.Join(dirname, path[2:])
 }

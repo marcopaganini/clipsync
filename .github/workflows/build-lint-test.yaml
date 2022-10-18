@@ -1,9 +1,7 @@
-# Check go code.
-
-name: Test Go code
+name: Go build/lint/test
 on: [push, pull_request]
 jobs:
-  testcode:
+  build_lint_test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -21,13 +19,10 @@ jobs:
       - name: Build binary
         run: |
           make
+      - name: Go Lint
+        run: |
+          golint -set_exit_status
       - name: Go test
         run: |
           go test -v ./...
           go test -cpu=2 -race -v ./...
-      - name: Go Lint
-        run: |
-          golint -set_exit_status
-      - name: Go vet
-        run: |
-          go vet

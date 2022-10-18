@@ -1,5 +1,3 @@
-// util.go - Miscellaneous function of general use.
-//
 // This file is part of clipsync (C)2022 by Marco Paganini
 // Please see http://github.com/marcopaganini/clipsync for details.
 

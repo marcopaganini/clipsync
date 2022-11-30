@@ -7,7 +7,6 @@ import (
 	"crypto/md5"
 	"fmt"
 	"os"
-	"regexp"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -116,9 +115,9 @@ func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcach
 // returns.
 //
 // If chromeQuirk is set, the function restores the primary selection when it
-// contains a single rune (character or UTF character). This is a workaround for
-// Chrome in Linux where chrome sometimes overwrites the primary selection with
-// a single character when compose sequences are used.
+// contains a single accent character (", ', `, ^, etc). This is a workaround
+// for Chrome in Linux where chrome sometimes overwrites the primary selection
+// with a single accent when compose sequences are used.
 //
 // if syncSelections is set, keep both primary and clipboard selections in
 // sync (i.e. setting one will also set the other). Note that the server
@@ -128,7 +127,6 @@ func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcach
 // expensive operation as it requires calling xclip. This will be changed in a
 // future version, which should allow us to simplify this function.
 func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, topic string, cryptPassword []byte) {
-	var singleUnicode = regexp.MustCompile(`^[[:^ascii:]]$`)
 	var err error
 
 	for {
@@ -146,10 +144,10 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 		memPrimary := xsel.getMemPrimary()
 
 		// Restore the memory clipboard if:
-		// 1) chromeQuirk is set and
-		// 2) The X clipboard contains a single unicode characters and
+		// 1) chromeQuirk is set and...
+		// 2) The X clipboard contains a single character in a list of characters and...
 		// 3) memClipboard does NOT contain a single unicode character (avoid loops).
-		if *clientcfg.chromequirk && singleUnicode.MatchString(xprimary) && !singleUnicode.MatchString(memPrimary) {
+		if *clientcfg.chromequirk && isAccent(xprimary) && !isAccent(memPrimary) {
 			log.Debugf("Chrome quirk detected. Restoring primary to %s", redact.redact(memPrimary))
 			xprimary = memPrimary
 			if err := xsel.setXPrimary(memPrimary); err != nil {
@@ -159,7 +157,6 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 
 		// Sync primary and clipboard, if requested. This will change the
 		// selections if sync is needed.
-
 		var pub string
 
 		if *clientcfg.syncsel {
@@ -240,4 +237,17 @@ func syncClips(broker mqtt.Client, xsel *xselection, topic, xprimary, xclipboard
 		log.Debugf("syncClips requesting publication of: %s", redact.redact(pub))
 	}
 	return pub, nil
+}
+
+// isAccent returns true if the string is one of the accents chrome sets the clipboard to.
+func isAccent(s string) bool {
+	accents := map[string]bool{
+		"´": true,
+		"¨": true,
+		"`": true,
+		"~": true,
+		"^": true,
+	}
+	_, ok := accents[s]
+	return ok
 }

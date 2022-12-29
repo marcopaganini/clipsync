@@ -16,10 +16,7 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=exec
-ExecStart=/usr/local/bin/clips -v --user clipsync \
-          --password-file "/full/path/to/password/file" \
-          --server ssh://your_server:port \
-          client --sync-selections --redact-level=4
+ExecStart=/usr/local/bin/clips -v client
 Restart=on-failure
 
 [Install]

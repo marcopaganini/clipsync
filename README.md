@@ -1,4 +1,4 @@
-# ClipSync - Sync your Clipboard across machines automatically.
+# Clipsync - Sync your Clipboard across machines automatically.
 
 ## Description
 

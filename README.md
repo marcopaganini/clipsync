@@ -126,3 +126,8 @@ edit your `~/.tmux.conf` file and add:
   change this documentation accordingly.
 * Clipboard and selection management under X is, frankly, a complete mess. Some programs won't accept the
   primary selection (middle click of the mouse) and require a Ctrl-C/Ctrl-V.
+
+## Alternatives
+
+* [pbproxy](https://github.com/nikvdp/pbproxy) allows you to send your clipboard anywhere you can ssh to
+  using the `pbproxy` command (similar to Mac's pbcopy and pbpaste). pbproxy works with Linux and Macs.

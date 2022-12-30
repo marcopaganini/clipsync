@@ -16,12 +16,15 @@ synchronize between the local clipboard and selection automatically.
 
 ## Basic principle of operation
 
-* Set you your own MQTT broker or choose a free one.
-* Run the program on your local workstation and any remote workstations
-  with configuration pointing to the same MQTT broker.
+* Set you your own MQTT broker or choose a free one (default if no server specified).
+* Run the program on your local workstation running X and any remote workstations
+  with the same set of configuration files (mqtt broker, clipboard encryption password, etc)
 * Work as usual. Any changes to the local clipboard (Ctrl-C) or primary selection
   (selecting with the mouse, pasting with middle click) will populate the remote
   clipboards as well.
+* Remove (or local) servers without X can still use `clips copy` and `clips paste` to
+  send stdin to a set of remote servers or receive the remote clipboard standard
+  output.
 * You can also easily send the output of a program to all of your other workstations,
   using `clips copy`.
 
@@ -33,7 +36,13 @@ synchronize between the local clipboard and selection automatically.
 
 ## Obtaining an MQTT account
 
-There are two basic ways to obtain an MQTT account:
+There are a few ways to go abount an MQTT account:
+
+* Use the default, the mosquitto.org test (public) server. For this to happen, just
+  run `clips client` without specifying a server with the `--server` flag. This
+  directs the program to use clipboard encryption, a random topic and the free servers.
+  This option is the default and should be zero work. Note that public servers may
+  become unavailable, so YMMV.
 
 * Create a free account in one of the [many available public brokers](https://mntolia.com/10-free-public-private-mqtt-brokers-for-testing-prototyping/). Please make sure the server you choose supports message retention. Some
 don't even require a login and anyone could in theory subscribe to your clipboard. In practice
@@ -48,15 +57,23 @@ that's not a problem since the contents of your clipboard are encrypted.
 The easiest way is to download a binary for your platform directly on the [releases page](https://github.com/marcopaganini/clipsync/releases). Save this binary in a common location like `/usr/local/bin` and
 make sure to `chmod 755 /usr/local/bin/clips'
 
-If you have go installed, just clone this repository (`git clone https://github.com/marcopaganini/clipsync`)
+Or, if you have go installed, just clone this repository (`git clone https://github.com/marcopaganini/clipsync`)
 and run `make` inside the repo root directory.
 
 ## Configuring clipsync
 
-It's possible to specify all configuration items directly on the command-line.
-However, this would make it easier for eavesdroppers (with access to your
-workstation) to see your user, password, and encryption password. The
-recommended way is to create a configuration file under your home directory:
+If you just run `clips client`, no configuration is required. The program will connect
+to the public mqtt broker and set the correct parameters. It will also create a clipboard
+encryption key under `$HOME/.config/clipsync`. **Make sure all machines sharing clipboard
+have the same versions of these files**.
+
+If all you need is to sync your clipboard, you can safely skip the rest of this section.
+
+For more complex configurations, it's possible to specify all configuration
+items directly on the command-line.  However, this would make it easier for
+eavesdroppers (with access to your workstation) to see your user, password, and
+encryption password. The recommended way is to create a configuration file
+under your home directory:
 
 ```
 mkdir -p ~/.config/clipsync
@@ -88,10 +105,11 @@ echo "any_large_enough_password_with_666_numbers_and_signs!" >~/.config/clipsync
 
 ## Test run
 
-To test, just run `clips -v client` and clipsync should connect to your MQTT broker and wait for
-clipboard changes. Copy a few items to the clipboard and watch for activity in the log. You can
-copy the entire contents of `~/.config/clipsync` to other workstations and run `clips -v client` from
-there as well. Clipboards should be synced.
+To test, just run `clips -v client` and clipsync should connect to the public
+MQTT broker and wait for clipboard changes. Copy a few items to the clipboard
+and watch for activity in the log. You can copy the entire contents of
+`~/.config/clipsync` to other workstations and run `clips -v client` from there
+as well. Clipboards should be synced.
 
 ## Production run
 

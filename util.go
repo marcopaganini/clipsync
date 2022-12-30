@@ -68,3 +68,12 @@ func tildeExpand(path string) string {
 	}
 	return filepath.Join(dirname, path[2:])
 }
+
+// fileExists if the given file exists and is a file (not a directory).
+func fileExists(filename string) bool {
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
+}

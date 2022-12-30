@@ -10,6 +10,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	mrand "math/rand"
+	"time"
 )
 
 const cryptKeyLen = 32
@@ -83,4 +85,18 @@ func decrypt64(ciphertext string, key []byte) (string, error) {
 		return "", err
 	}
 	return cleartext, nil
+}
+
+// createPassword creates a 32-byte random password.
+func createPassword() []byte {
+	charset := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789~!@#$%^&*()-_+="
+	ret := [cryptKeyLen]byte{}
+
+	mrand.Seed(time.Now().UnixNano())
+
+	clen := len(charset)
+	for i := 0; i < cryptKeyLen; i++ {
+		ret[i] = charset[mrand.Intn(clen)]
+	}
+	return ret[0:cryptKeyLen]
 }

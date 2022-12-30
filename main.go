@@ -6,6 +6,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,7 +21,9 @@ import (
 
 const (
 	// Config file.
-	configFile = "~/.config/clipsync/config"
+	configDir         = "~/.config/clipsync"
+	configFile        = "config"
+	cryptPasswordFile = "crypt-password"
 )
 
 // BuildVersion Holds the current git HEAD version number.
@@ -33,7 +36,7 @@ type globalConfig struct {
 	cafile       *string
 	cert         []byte
 	debug        *bool
-	encpassfile  *string
+	cryptfile    *string
 	mqttdebug    *bool
 	nocolors     *bool
 	password     *string
@@ -97,7 +100,7 @@ func setupLogging(cfg globalConfig) {
 	log.SetFormatter(logFormat)
 }
 
-// randomTopic generates a random topic name based on the SHA256 of the cryptoPassword.
+// randomTopic generates a random topic name based on the SHA256 of the cryptPassword.
 // The topic is broken down into multiple sections to avoid very long names.
 func randomTopic(pass []byte) string {
 	hasher := sha256.New()
@@ -112,6 +115,57 @@ func randomTopic(pass []byte) string {
 	return strings.Join(frags, "/")
 }
 
+// readCryptPassword will read the crypt password file and return it.
+func readCryptPassword(fname string) ([]byte, error) {
+	var pass []byte
+
+	p, err := os.ReadFile(tildeExpand(fname))
+	if err != nil {
+		return nil, err
+	}
+	pass = []byte(strings.TrimRight(string(p), "\n"))
+	if len(pass) != cryptKeyLen {
+		return nil, errors.New("crypt password must be exactly 32 characters")
+	}
+
+	return pass, nil
+}
+
+// initConfig creates the basic configuration directories under home and generates
+// a new crypt-password file with a random password in our default location if
+// cryptfile is blank. Returns the name of the cryptfile used (or created). This
+// will be the input cryptfile or the default location if cryptfile = blank.
+func initConfig(d, f string) (string, error) {
+	dir := tildeExpand(d)
+	cryptfile := tildeExpand(f)
+
+	// Create the config directory recursively.
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+
+	// We assume this was passed on the command-line and users know what they're doing (ha!)
+	if cryptfile != "" {
+		log.Infof("User requested crypt file: %s. Not creating random password.", cryptfile)
+		return cryptfile, nil
+	}
+
+	// Default location.
+	cryptfile = filepath.Join(tildeExpand(configDir), tildeExpand(cryptPasswordFile))
+	log.Infof("Using crypt file: %s", cryptfile)
+
+	// Create a brand new crypt file if it does not exist.
+	if !fileExists(cryptfile) {
+		p := createPassword()
+		if err := os.WriteFile(cryptfile, p, 0700); err != nil {
+			return "", err
+		}
+		log.Infof("Created a new crypt file with a random password at %s", cryptfile)
+	}
+
+	return cryptfile, nil
+}
+
 func main() {
 	var err error
 
@@ -121,12 +175,12 @@ func main() {
 	cfg := globalConfig{
 		cafile:       app.Flag("cafile", "CA certificates file (usually /etc/ssl/certs/ca-certificates.crt").String(),
 		debug:        app.Flag("debug", "Make verbose more verbose").Short('D').Bool(),
-		encpassfile:  app.Flag("cryptpass-file", "Encryption password file").String(),
+		cryptfile:    app.Flag("crypt-file", "File containing a 32-byte clipboard encryption password").String(),
 		mqttdebug:    app.Flag("mqtt-debug", "Turn on MQTT debugging").Bool(),
 		nocolors:     app.Flag("no-colors", "No colors on log output to terminal.").Bool(),
 		password:     app.Flag("password", "MQTT password").Short('p').String(),
 		passwordfile: app.Flag("password-file", "File containing the MQTT password").String(),
-		randomtopic:  app.Flag("random-topic", "Generate a random topic based on your encryption key.").Bool(),
+		randomtopic:  app.Flag("random-topic", "Use a random topic name based on your encryption key.").Bool(),
 		redactlevel:  app.Flag("redact-level", "Max number of characters to show on redacted messages").Int(),
 		server:       app.Flag("server", "MQTT broker URL. E.g. ssl://ip:port.").Short('s').String(),
 		topic:        app.Flag("topic", "MQTT topic").Short('t').Default("clipsync").String(),
@@ -153,28 +207,31 @@ func main() {
 	versionCmd := app.Command("version", "Show version information.")
 
 	// Command-line parsing.
-	args := insertConfigFile(os.Args[1:], tildeExpand(configFile))
+	args := insertConfigFile(os.Args[1:], tildeExpand(filepath.Join(configDir, configFile)))
 	cmdline := kingpin.MustParse(app.Parse(args))
 
 	setupLogging(cfg)
 
-	// Read password from file, if requested.
+	// Create basic directories and a crypt file containing a
+	// random key, if it doesn't yet exist and is in the default
+	// location (blank).
+	*cfg.cryptfile, err = initConfig(configDir, *cfg.cryptfile)
+	if err != nil {
+		log.Fatalf("Error initializing configuration: %v", err)
+	}
+
+	// Read MQTT password from file, if requested.
 	if *cfg.passwordfile != "" {
 		p, err := os.ReadFile(tildeExpand(*cfg.passwordfile))
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("Error reading password file: %v", err)
 		}
 		*cfg.password = strings.TrimRight(string(p), "\n")
 	}
 
-	// Encryption password.
-	var cryptPassword []byte
-	if *cfg.encpassfile != "" {
-		p, err := os.ReadFile(tildeExpand(*cfg.encpassfile))
-		if err != nil {
-			log.Fatal(err)
-		}
-		cryptPassword = []byte(strings.TrimRight(string(p), "\n"))
+	cryptPassword, err := readCryptPassword(*cfg.cryptfile)
+	if err != nil {
+		log.Fatalf("Error reading crypt password: %v", err)
 	}
 
 	// Read CA File into our filesystem, if requested.
@@ -197,31 +254,27 @@ func main() {
 	}
 
 	// If no server was specified, we assume a connection to a public server
-	// (test.mosquitto.org).  There's a number of parameters that need to be
-	// overriden.
+	// (test.mosquitto.org).  There's a number of parameters that we need to
+	// override.
 	if *cfg.server == "" {
-		if len(cryptPassword) == 0 {
-			log.Fatal("Must specify an encrypted pasword file (--cryptpass-file) with public servers.")
-		}
+		log.Info("No server specified. Using public server. YMMV.")
 		*cfg.user = ""
 		*cfg.password = ""
 		*cfg.randomtopic = true
 		*cfg.server = "test.mosquitto.org:1883"
 	}
 
-	// if randomtopic was chosen, generate a random topic based on the sha256 of the cryptPassword.
+	// if randomtopic uses a random topic based on the sha256 of the cryptPassword.
 	if *cfg.randomtopic {
-		if len(cryptPassword) == 0 {
-			log.Fatal("Must specify an encrypted pasword file (--encpassfile) when using random topics .")
-		}
 		*cfg.topic = randomTopic(cryptPassword)
-		log.Infof("Using random topic: %s\n", *cfg.topic)
 	}
 
 	// Make sure host is not blank after any possible overrides.
 	if *cfg.server == "" {
-		log.Fatal("Must specify a server with the --server=address:port command-line flag.")
+		log.Fatal("I don't have a server right before starting to work. This should not happen.")
 	}
+
+	log.Infof("Using topic: %s\n", *cfg.topic)
 
 	switch cmdline {
 	case pasteCmd.FullCommand():

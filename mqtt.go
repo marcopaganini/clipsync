@@ -6,7 +6,6 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"os"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -15,10 +14,7 @@ import (
 )
 
 func newBroker(cfg globalConfig, handler func(client mqtt.Client, msg mqtt.Message)) (mqtt.Client, error) {
-	tlsconfig, err := newTLSConfig(*cfg.cafile)
-	if err != nil {
-		return nil, err
-	}
+	tlsconfig := newTLSConfig(cfg.cert)
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(*cfg.server)
 
@@ -61,7 +57,7 @@ func newBroker(cfg globalConfig, handler func(client mqtt.Client, msg mqtt.Messa
 	return c, nil
 }
 
-func newTLSConfig(cafile string) (*tls.Config, error) {
+func newTLSConfig(cert []byte) *tls.Config {
 	// Create tls.Config with desired tls properties
 	ret := &tls.Config{
 		ClientAuth: tls.NoClientCert,
@@ -70,13 +66,10 @@ func newTLSConfig(cafile string) (*tls.Config, error) {
 		// InsecureSkipVerify = Cert contents must match server, IP, host, etc.
 		//InsecureSkipVerify: true,
 	}
-	if cafile != "" {
+	if len(cert) != 0 {
 		certpool := x509.NewCertPool()
-		pemCerts, err := os.ReadFile(cafile)
-		if err == nil {
-			certpool.AppendCertsFromPEM(pemCerts)
-		}
+		certpool.AppendCertsFromPEM(cert)
 		ret.RootCAs = certpool
 	}
-	return ret, nil
+	return ret
 }

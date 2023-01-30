@@ -146,7 +146,6 @@ func initConfig(d, f string) (string, error) {
 
 	// We assume this was passed on the command-line and users know what they're doing (ha!)
 	if cryptfile != "" {
-		log.Infof("User requested crypt file: %s. Not creating random password.", cryptfile)
 		return cryptfile, nil
 	}
 
@@ -273,8 +272,6 @@ func main() {
 	if *cfg.server == "" {
 		log.Fatal("I don't have a server right before starting to work. This should not happen.")
 	}
-
-	log.Infof("Using topic: %s\n", *cfg.topic)
 
 	switch cmdline {
 	case pasteCmd.FullCommand():

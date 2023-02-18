@@ -1,6 +1,5 @@
 // This file is part of clipsync (C)2022 by Marco Paganini
 // Please see http://github.com/marcopaganini/clipsync for details.
-
 package main
 
 import (
@@ -117,7 +116,8 @@ func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcach
 // If chromeQuirk is set, the function restores the primary selection when it
 // contains a single accent character (", ', `, ^, etc). This is a workaround
 // for Chrome in Linux where chrome sometimes overwrites the primary selection
-// with a single accent when compose sequences are used.
+// with a single accent when compose sequences are used. For further details
+// on this bug, see https://bugs.chromium.org/p/chromium/issues/detail?id=1213325
 //
 // if syncSelections is set, keep both primary and clipboard selections in
 // sync (i.e. setting one will also set the other). Note that the server
@@ -130,7 +130,12 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 	var err error
 
 	for {
-		time.Sleep(time.Duration(*clientcfg.polltime) * time.Second)
+		// Wait for primary or clipboard change.
+		if cnotify() != 0 {
+			log.Errorf("ClipNotify returned error. Will wait and retry.")
+			time.Sleep(time.Duration(2) * time.Second)
+			continue
+		}
 
 		// Restore the primary selection to the saved value if it contains
 		// a single rune and chromeQuirk is set.

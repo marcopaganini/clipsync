@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	log "github.com/sirupsen/logrus"
+	log "github.com/romana/rlog"
 )
 
 // pastecmd prints the first message from the server (all messages are sent

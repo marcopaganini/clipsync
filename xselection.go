@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	log "github.com/romana/rlog"
 )
 
 const (

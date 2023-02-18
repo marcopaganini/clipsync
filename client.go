@@ -10,7 +10,7 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/patrickmn/go-cache"
-	log "github.com/sirupsen/logrus"
+	log "github.com/romana/rlog"
 )
 
 const (
@@ -43,7 +43,7 @@ func clientcmd(cfg globalConfig, clientcfg clientConfig, cryptPassword []byte) e
 	})
 
 	if err != nil {
-		log.Fatalf("Unable to connect to broker: %v", err)
+		return fmt.Errorf("Unable to connect to broker: %v", err)
 	}
 
 	// Loops forever sending any local clipboard changes to broker.
@@ -56,9 +56,6 @@ func clientcmd(cfg globalConfig, clientcfg clientConfig, cryptPassword []byte) e
 // subHandler is called by when new data is available and updates the
 // clipboard with the remote clipboard.
 func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcache *cache.Cache, syncsel bool, cryptPassword []byte) {
-	log.Debugf("Entering subHandler")
-	defer log.Debugf("Leaving subHandler")
-
 	xprimary := xsel.getXPrimary("")
 
 	var err error
@@ -68,7 +65,7 @@ func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcach
 		// Ignore duplicate encrypted messages as they should never happen.
 		md5 := fmt.Sprintf("%x", md5.Sum(msg.Payload()))
 		if _, found := hashcache.Get(md5); found {
-			log.Warningf("Ignoring duplicate encrypted message: %s", data)
+			log.Debugf("Ignoring duplicate encrypted message: %s", data)
 			return
 		}
 		data, err = decrypt64(data, cryptPassword)
@@ -256,8 +253,8 @@ func syncClips(broker mqtt.Client, xsel *xselection, topic, xprimary, xclipboard
 	// Ignore blank returns as they could be an error in xclip or no
 	// content in the clipboard with the desired mime-type.
 	if xclipboard != "" && xclipboard != xsel.getMemClipboard() {
-		log.Debugf("syncClips X clipboard: %s", redact.redact(xclipboard))
-		log.Debugf("syncClips mem primary: %s", redact.redact(xsel.getMemPrimary()))
+		log.Debugf("X clipboard: %s", redact.redact(xclipboard))
+		log.Debugf("mem primary: %s", redact.redact(xsel.getMemPrimary()))
 
 		log.Debugf("Syncing clipboard -> X PRIMARY and memory primary/clipboard")
 		if err := xsel.setXPrimary(xclipboard); err != nil {
@@ -269,8 +266,8 @@ func syncClips(broker mqtt.Client, xsel *xselection, topic, xprimary, xclipboard
 
 		// X primary changed? Sync to memory and X clipboard.
 	} else if xprimary != "" && xprimary != xsel.getMemPrimary() {
-		log.Debugf("syncClips X primary: %s", redact.redact(xprimary))
-		log.Debugf("syncClips mem clipboard: %s", redact.redact(xsel.getMemClipboard()))
+		log.Debugf("X primary: %s", redact.redact(xprimary))
+		log.Debugf("mem clipboard: %s", redact.redact(xsel.getMemClipboard()))
 
 		log.Debugf("Syncing primary -> X CLIPBOARD and memory primary/clipboard")
 		if err := xsel.setXClipboard(xprimary); err != nil {
@@ -284,7 +281,7 @@ func syncClips(broker mqtt.Client, xsel *xselection, topic, xprimary, xclipboard
 
 	// Publish to server, if needed
 	if pub != "" {
-		log.Debugf("syncClips requesting publication of: %s", redact.redact(pub))
+		log.Debugf("requesting publication of: %s", redact.redact(pub))
 	}
 	return pub, nil
 }

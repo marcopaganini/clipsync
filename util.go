@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/fredli74/lockfile"
-	log "github.com/sirupsen/logrus"
+	log "github.com/romana/rlog"
 )
 
 // Show at most this number of characters on a redacted string
@@ -51,7 +51,7 @@ func strquote(s string) string {
 func singleInstanceOrDie(lckfile string) *lockfile.LockFile {
 	lock, err := lockfile.Lock(lckfile)
 	if err != nil {
-		log.Fatalf("Another instance is already running.")
+		fatalf("Another instance is already running.")
 	}
 	return lock
 }

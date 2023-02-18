@@ -7,13 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // copycmd reads the stdin and sends it to the broker (server).
 func copycmd(cfg globalConfig, cryptPassword []byte, filter bool) error {
-	log.Debug("Got copy command")
 	broker, err := newBroker(cfg, nil)
 	if err != nil {
 		return fmt.Errorf("Unable to connect to broker: %v", err)
@@ -25,7 +22,6 @@ func copycmd(cfg globalConfig, cryptPassword []byte, filter bool) error {
 	defer broker.Disconnect(1)
 	spub := string(pub)
 
-	log.Debugf("Sending from stdin to broker: %s", redact.redact(spub))
 	publish(broker, *cfg.topic, spub, cryptPassword)
 	if filter {
 		fmt.Print(spub)

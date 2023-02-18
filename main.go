@@ -10,13 +10,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
-	mqtt "github.com/eclipse/paho.mqtt.golang"
-	log "github.com/sirupsen/logrus"
-
-	"gopkg.in/alecthomas/kingpin.v2"
+	"github.com/alecthomas/kingpin/v2"
+	log "github.com/romana/rlog"
 )
 
 const (
@@ -59,6 +56,22 @@ type clientConfig struct {
 // The redact object is used by other functions in this namespace.
 var redact redactType
 
+// fatal logs a message with rlog.Critical and exits with a return code.
+func fatal(v ...any) {
+	if v != nil {
+		log.Critical(v...)
+	}
+	os.Exit(1)
+}
+
+// fatalf logs a message with rlog.Criticalf and exits with a return code.
+func fatalf(f string, v ...any) {
+	if v != nil {
+		log.Criticalf(f, v...)
+	}
+	os.Exit(1)
+}
+
 // insertConfigFile checks for the existence of a configuration file and
 // inserts it as @file before the command line arguments. This causes kingpin
 // to read the contents of this file as arguments.
@@ -73,31 +86,17 @@ func insertConfigFile(args []string, configFile string) []string {
 // setupLogging configures the logging parameters from the command line
 // options and other conditions.
 func setupLogging(cfg globalConfig) {
-	logFormat := &log.TextFormatter{
-		FullTimestamp:          true,
-		DisableLevelTruncation: true,
-		CallerPrettyfier: func(f *runtime.Frame) (string, string) {
-			_, filename := filepath.Split(f.File)
-			return fmt.Sprintf("%s()", f.Function), fmt.Sprintf("%s:%d", filename, f.Line)
-		},
-	}
 	// If stdout does not point to a tty, assume we're using syslog/journald
 	// and remove the timestamp, since those systems already add it.
 	if fi, _ := os.Stdout.Stat(); (fi.Mode() & os.ModeCharDevice) == 0 {
-		logFormat.DisableTimestamp = true
+		os.Setenv("RLOG_LOG_NOTIME", "yes")
 	}
 
 	if *cfg.verbose {
-		log.SetLevel(log.DebugLevel)
-		if *cfg.debug {
-			log.SetReportCaller(true)
-		}
+		os.Setenv("RLOG_LOG_LEVEL", "DEBUG")
+		os.Setenv("RLOG_CALLER_INFO", "yes")
 	}
-
-	if *cfg.nocolors {
-		logFormat.DisableColors = true
-	}
-	log.SetFormatter(logFormat)
+	log.UpdateEnv()
 }
 
 // randomTopic generates a random topic name based on the SHA256 of the cryptPassword.
@@ -216,41 +215,41 @@ func main() {
 	// location (blank).
 	*cfg.cryptfile, err = initConfig(configDir, *cfg.cryptfile)
 	if err != nil {
-		log.Fatalf("Error initializing configuration: %v", err)
+		fatalf("Error initializing configuration: %v", err)
 	}
 
 	// Read MQTT password from file, if requested.
 	if *cfg.passwordfile != "" {
 		p, err := os.ReadFile(tildeExpand(*cfg.passwordfile))
 		if err != nil {
-			log.Fatalf("Error reading password file: %v", err)
+			fatalf("Error reading password file: %v", err)
 		}
 		*cfg.password = strings.TrimRight(string(p), "\n")
 	}
 
 	cryptPassword, err := readCryptPassword(*cfg.cryptfile)
 	if err != nil {
-		log.Fatalf("Error reading crypt password: %v", err)
+		fatalf("Error reading crypt password: %v", err)
 	}
 
 	// Read CA File into our filesystem, if requested.
 	if *cfg.cafile != "" {
 		cfg.cert, err = os.ReadFile(*cfg.cafile)
 		if err != nil {
-			log.Fatalf("Unable to read CA file: %v", err)
+			fatalf("Unable to read CA file: %v", err)
 		}
 	}
 
 	// Initialize redact object.
 	redact = redactType{*cfg.redactlevel}
 
-	// MQTT debugging
-	if *cfg.mqttdebug {
-		mqtt.DEBUG = log.New()
-		mqtt.ERROR = log.New()
-		mqtt.CRITICAL = log.New()
-		mqtt.WARN = log.New()
-	}
+	// MQTT debugging (FIXME)
+	//if *cfg.mqttdebug {
+	//    mqtt.DEBUG = log.Debug
+	//    mqtt.ERROR = log.New()
+	//    mqtt.CRITICAL = log.New()
+	//    mqtt.WARN = log.New()
+	//}
 
 	// If no server was specified, we assume a connection to a public server
 	// (test.mosquitto.org).  There's a number of parameters that we need to
@@ -270,18 +269,18 @@ func main() {
 
 	// Make sure host is not blank after any possible overrides.
 	if *cfg.server == "" {
-		log.Fatal("I don't have a server right before starting to work. This should not happen.")
+		fatal("I don't have a server right before starting to work. This should not happen.")
 	}
 
 	switch cmdline {
 	case pasteCmd.FullCommand():
 		if err := pastecmd(cfg, cryptPassword); err != nil {
-			log.Fatal(err)
+			fatal(err)
 		}
 
 	case copyCmd.FullCommand():
 		if err := copycmd(cfg, cryptPassword, *copyCmdFilter); err != nil {
-			log.Fatal(err)
+			fatal(err)
 		}
 
 	case clientCmd.FullCommand():
@@ -290,7 +289,7 @@ func main() {
 		defer lock.Unlock()
 
 		if err := clientcmd(cfg, clientcfg, cryptPassword); err != nil {
-			log.Fatal(err)
+			fatal(err)
 		}
 
 	case versionCmd.FullCommand():

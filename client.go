@@ -17,6 +17,13 @@ const (
 	syncerLockFile = "/var/run/lock/clipsync-client.lock"
 )
 
+type delayedPublishChan struct {
+	broker        mqtt.Client
+	topic         string
+	content       string
+	cryptPassword []byte
+}
+
 // clientcmd activates "client" mode, syncing the local clipboard to the server
 // and vice-versa. This function will only return in case of error.
 func clientcmd(cfg globalConfig, clientcfg clientConfig, cryptPassword []byte) error {
@@ -129,6 +136,9 @@ func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcach
 func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, topic string, cryptPassword []byte) {
 	var err error
 
+	dpchan := make(chan delayedPublishChan, 1)
+	go delayedPublish(dpchan)
+
 	for {
 		// Wait for primary or clipboard change.
 		if cnotify() != 0 {
@@ -176,9 +186,15 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 			pub = xprimary
 		}
 
-		// Publish if needed.
+		// Publish if needed. Delay publication until clipboard settles since
+		// large selections would cause an excessive number of publications.
 		if pub != "" {
-			publish(broker, topic, pub, cryptPassword)
+			dpchan <- delayedPublishChan{
+				broker:        broker,
+				topic:         topic,
+				content:       pub,
+				cryptPassword: cryptPassword,
+			}
 		}
 	}
 }
@@ -187,7 +203,6 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 func publish(broker mqtt.Client, topic, s string, cryptPassword []byte) {
 	// Set in-memory primary selection and publish to server.
 	log.Debugf("Publishing primary selection: %s", redact.redact(s))
-	defer log.Debugf("Publish done")
 
 	var err error
 	if len(cryptPassword) > 0 {
@@ -200,6 +215,36 @@ func publish(broker mqtt.Client, topic, s string, cryptPassword []byte) {
 
 	if token := broker.Publish(topic, 0, true, s); token.Wait() && token.Error() != nil {
 		log.Errorf("Error publishing to server: %v", token.Error())
+	}
+}
+
+// delayedPublish runs as a goroutine and takes a channel of type
+// delayedPublishChan.  Information received through the channel is stored
+// internally, until a timeout happens, at which time that information is
+// published. This prevents excessive publications, in particular when
+// selecting large areas of text which would cause publish to be called
+// repeatedly.
+func delayedPublish(ch chan delayedPublishChan) {
+	var dp delayedPublishChan
+	for {
+		select {
+		// Save information locally when receiving from channel.
+		case c := <-ch:
+			dp = delayedPublishChan{
+				broker:        c.broker,
+				topic:         c.topic,
+				content:       c.content,
+				cryptPassword: c.cryptPassword,
+			}
+			continue
+
+		case <-time.After(1 * time.Second):
+			// Safeguard: Only publish if some content is available.
+			if dp.content != "" {
+				publish(dp.broker, dp.topic, dp.content, dp.cryptPassword)
+				dp = delayedPublishChan{}
+			}
+		}
 	}
 }
 

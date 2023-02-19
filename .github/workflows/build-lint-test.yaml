@@ -16,6 +16,7 @@ jobs:
           go get -t ./...
           go get golang.org/x/lint/golint
           go install golang.org/x/lint/golint
+          sudo apt-get install libx11-dev libxfixes-dev
       - name: Build binary
         run: |
           make

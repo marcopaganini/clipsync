@@ -252,29 +252,39 @@ func syncClips(broker mqtt.Client, xsel *xselection, topic, xprimary, xclipboard
 
 	// Ignore blank returns as they could be an error in xclip or no
 	// content in the clipboard with the desired mime-type.
-	if xclipboard != "" && xclipboard != xsel.getMemClipboard() {
-		log.Debugf("X clipboard: %s", redact.redact(xclipboard))
-		log.Debugf("mem primary: %s", redact.redact(xsel.getMemPrimary()))
+	memClipboard := xsel.getMemClipboard()
+	memPrimary := xsel.getMemPrimary()
 
+	log.Debugf("X clipboard: %s", redact.redact(xclipboard))
+	log.Debugf("mem primary: %s", redact.redact(memPrimary))
+	log.Debugf("mem clipboard: %s", redact.redact(memClipboard))
+
+	if xclipboard != "" && xclipboard != memClipboard {
 		log.Debugf("Syncing clipboard -> X PRIMARY and memory primary/clipboard")
 		if err := xsel.setXPrimary(xclipboard); err != nil {
 			return "", err
 		}
+		log.Debugf("Syncing clipboard -> memory primary")
 		xsel.setMemPrimary(xclipboard)
+
+		log.Debugf("Syncing clipboard -> memory clipboard")
 		xsel.setMemClipboard(xclipboard)
 		pub = xclipboard
 
 		// X primary changed? Sync to memory and X clipboard.
-	} else if xprimary != "" && xprimary != xsel.getMemPrimary() {
+	} else if xprimary != "" && xprimary != memPrimary {
 		log.Debugf("X primary: %s", redact.redact(xprimary))
 		log.Debugf("mem clipboard: %s", redact.redact(xsel.getMemClipboard()))
 
-		log.Debugf("Syncing primary -> X CLIPBOARD and memory primary/clipboard")
+		log.Debugf("Syncing primary -> X CLIPBOARD")
 		if err := xsel.setXClipboard(xprimary); err != nil {
 			return "", err
 		}
 		// primary changed, sync to clipboard.
+		log.Debugf("Syncing primary -> memory primary")
 		xsel.setMemPrimary(xprimary)
+
+		log.Debugf("Syncing primary -> X CLIPBOARD and memory clipboard")
 		xsel.setMemClipboard(xprimary)
 		pub = xprimary
 	}

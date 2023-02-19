@@ -11,7 +11,7 @@ git_tag := $(shell git describe --always --tags)
 
 # Default target
 ${bin}: Makefile ${src}
-	CGO_ENABLED=0 go build -v -ldflags "-X main.BuildVersion=${git_tag}" -o "${bin}"
+	go build -v -ldflags "-X main.BuildVersion=${git_tag}" -o "${bin}"
 
 clean:
 	rm -f "${bin}"
@@ -23,7 +23,7 @@ install: ${bin}
 
 # Creates cross-compiled tarred versions (for releases).
 arch: Makefile ${src}
-	for ga in "linux/amd64" "linux/386" "linux/arm" "linux/arm64" "linux/mips" "linux/mipsle"; do \
+	for ga in "linux/amd64"; do \
 	  export GOOS="$${ga%/*}"; \
 	  export GOARCH="$${ga#*/}"; \
 	  dst="./${archdir}/$${GOOS}-$${GOARCH}"; \

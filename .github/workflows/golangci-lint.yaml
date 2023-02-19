@@ -10,6 +10,9 @@ jobs:
         with:
           go-version: 1.19.x
           check-latest: true
+      - name: Install dependencies
+        run: |
+          sudo apt-get build-essentials
       - name: Checkout repo
         uses: actions/checkout@v3
       - name: golangci-lint

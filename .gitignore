@@ -1,6 +1,7 @@
 # Main binary
 clips
 clipsync
+AppDir
 
 # Vim cruft
 *.sw?

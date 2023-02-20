@@ -22,11 +22,11 @@ synchronize between the local clipboard and selection automatically.
 * Work as usual. Any changes to the local clipboard (Ctrl-C) or primary selection
   (selecting with the mouse, pasting with middle click) will populate the remote
   clipboards as well.
-* Remove (or local) servers without X can still use `clips copy` and `clips paste` to
-  send stdin to a set of remote servers or receive the remote clipboard standard
-  output.
+* Remove (or local) servers without X can still use `clipsync copy` and
+  `clipsync paste` to send stdin to a set of remote servers or receive the
+  remote clipboard standard output.
 * You can also easily send the output of a program to all of your other workstations,
-  using `clips copy`.
+  using `clipsync copy`.
 
 ## Pre-requisites
 
@@ -39,7 +39,7 @@ synchronize between the local clipboard and selection automatically.
 There are a few ways to go abount an MQTT account:
 
 * Use the default, the mosquitto.org test (public) server. For this to happen, just
-  run `clips client` without specifying a server with the `--server` flag. This
+  run `clipsync client` without specifying a server with the `--server` flag. This
   directs the program to use clipboard encryption, a random topic and the free servers.
   This option is the default and should be zero work. Note that public servers may
   become unavailable, so YMMV.
@@ -55,17 +55,17 @@ that's not a problem since the contents of your clipboard are encrypted.
 ## Downloading clipsync
 
 The easiest way is to download a binary for your platform directly on the [releases page](https://github.com/marcopaganini/clipsync/releases). Save this binary in a common location like `/usr/local/bin` and
-make sure to `chmod 755 /usr/local/bin/clips'
+make sure to `chmod 755 /usr/local/bin/clipsync'
 
 Or, if you have go installed, just clone this repository (`git clone https://github.com/marcopaganini/clipsync`)
 and run `make` inside the repo root directory.
 
 ## Configuring clipsync
 
-If you just run `clips client`, no configuration is required. The program will connect
-to the public mqtt broker and set the correct parameters. It will also create a clipboard
-encryption key under `$HOME/.config/clipsync`. **Make sure all machines sharing clipboard
-have the same versions of these files**.
+If you just run `clipsync client`, no configuration is required. The program
+will connect to the public mqtt broker and set the correct parameters. It will
+also create a clipboard encryption key under `$HOME/.config/clipsync`. **Make
+sure all machines sharing clipboard have the same versions of these files**.
 
 If all you need is to sync your clipboard, you can safely skip the rest of this section.
 
@@ -105,10 +105,10 @@ echo "any_large_enough_password_with_666_numbers_and_signs!" >~/.config/clipsync
 
 ## Test run
 
-To test, just run `clips -v client` and clipsync should connect to the public
+To test, just run `clipsync -v client` and clipsync should connect to the public
 MQTT broker and wait for clipboard changes. Copy a few items to the clipboard
 and watch for activity in the log. You can copy the entire contents of
-`~/.config/clipsync` to other workstations and run `clips -v client` from there
+`~/.config/clipsync` to other workstations and run `clipsync -v client` from there
 as well. Clipboards should be synced.
 
 ## Production run
@@ -118,7 +118,7 @@ run automatically on login. To that effect:
 
 * Download the [clipsync.service](https://github.com/marcopaganini/clipsync/blob/master/extras/systemd/clipsync.service) into your user systemd units directory, `~/.config/systemd/user`.
 * If you prefer to synchronize your clipboard to your selection, edit the systemd unit file above and change
-  the `ExecStart` command to `ExecStart=/usr/local/bin/clips -v client --sync-selections`
+  the `ExecStart` command to `ExecStart=/usr/local/bin/clipsync -v client --sync-selections`
 * Run `systemctl --user daemon-reload` to reload the configuration.
 * Enable and start the unit with `systemctl --user enable clipsync --now`.
 * Make sure clipsync was started correctly with `systemctl --user status clipsync`.
@@ -127,13 +127,13 @@ run automatically on login. To that effect:
 ## Tricks and tips
 
 * You can also copy the output of any program to the local and all remote clipboards via command-line by running
-  `yourcommand | clips copy`. Running this command on a remote machine will also populate your local clipboard.
-* You can paste the clipboard to the standard output using `copy paste`.
+  `yourcommand | clipsync copy`. Running this command on a remote machine will also populate your local clipboard.
+* You can paste the clipboard to the standard output using `clipsync paste`.
 * It's possible to configure tmux to send the results of a copy operation to all other clipboards. For that, just
 edit your `~/.tmux.conf` file and add:
 
   ```
-  bind-key -T copy-mode-vi Enter send-keys -X copy-pipe-and-cancel "clips copy --filter | xclip -i -f -selection primary | xclip -i -selection clipboard 2>/dev/null"
+  bind-key -T copy-mode-vi Enter send-keys -X copy-pipe-and-cancel "clipsync copy --filter | xclip -i -f -selection primary | xclip -i -selection clipboard 2>/dev/null"
   ```
 
   Change `copy-mode-vi` do `copy-mode` if you don't use vi keyboard mapping for your scrollback buffer in tmux.

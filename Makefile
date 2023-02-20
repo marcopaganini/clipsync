@@ -3,8 +3,9 @@
 
 .PHONY: arch clean install
 
-bin := clips
+bin := clipsync
 bindir := /usr/local/bin
+appdir := ./AppDir
 archdir := arch
 src := $(wildcard *.go)
 git_tag := $(shell git describe --always --tags)
@@ -20,6 +21,16 @@ clean:
 
 install: ${bin}
 	install -m 755 "${bin}" "${bindir}"
+
+appimage: ${bin}
+	rm -rf "${appdir}"
+	export VERSION="$$(git describe --exact-match --tags 2>/dev/null || git rev-parse --short HEAD)"; \
+	linuxdeploy-x86_64.AppImage \
+	  --appdir AppDir \
+	  -e ${bin} \
+	  -i resources/${bin}.png \
+	  --create-desktop-file \
+	  --output appimage
 
 # Creates cross-compiled tarred versions (for releases).
 arch: Makefile ${src}

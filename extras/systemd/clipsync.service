@@ -16,7 +16,7 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=exec
-ExecStart=/usr/local/bin/clips -v client
+ExecStart=/usr/local/bin/clipsync -v client
 Restart=on-failure
 
 [Install]

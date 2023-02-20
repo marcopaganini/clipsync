@@ -17,6 +17,7 @@ ${bin}: Makefile ${src}
 clean:
 	rm -f "${bin}"
 	rm -f "docs/${bin}.1"
+	rm -rf "${appdir}"
 	rm -rf "${archdir}"
 
 install: ${bin}

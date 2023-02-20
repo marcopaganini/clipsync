@@ -51,7 +51,7 @@ func strquote(s string) string {
 func singleInstanceOrDie(lckfile string) *lockfile.LockFile {
 	lock, err := lockfile.Lock(lckfile)
 	if err != nil {
-		fatalf("Another instance is already running.")
+		fatal("Another instance is already running.")
 	}
 	return lock
 }

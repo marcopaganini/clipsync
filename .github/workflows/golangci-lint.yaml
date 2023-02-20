@@ -2,7 +2,7 @@ name: golangci-lint
 on: [push, pull_request]
 jobs:
   golangci:
-    name: lint
+    name: golangci-lint
     runs-on: ubuntu-latest
     steps:
       - name: Setup Go
@@ -12,7 +12,7 @@ jobs:
           check-latest: true
       - name: Install dependencies
         run: |
-          sudo apt-get install build-essential
+          sudo apt-get install libx11-dev libxfixes-dev
       - name: Checkout repo
         uses: actions/checkout@v3
       - name: golangci-lint

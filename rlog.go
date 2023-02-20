@@ -1,4 +1,4 @@
-// This file is part of clipsync (C)2022 by Marco Paganini
+// This file is part of clipsync (C)2023 by Marco Paganini
 // Please see http://github.com/marcopaganini/clipsync for details.
 // rlog.go - Helper functions for the rlog library.
 

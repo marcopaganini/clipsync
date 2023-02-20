@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kingpin/v2"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	log "github.com/romana/rlog"
 )
 
@@ -56,22 +57,6 @@ type clientConfig struct {
 // The redact object is used by other functions in this namespace.
 var redact redactType
 
-// fatal logs a message with rlog.Critical and exits with a return code.
-func fatal(v ...any) {
-	if v != nil {
-		log.Critical(v...)
-	}
-	os.Exit(1)
-}
-
-// fatalf logs a message with rlog.Criticalf and exits with a return code.
-func fatalf(f string, v ...any) {
-	if v != nil {
-		log.Criticalf(f, v...)
-	}
-	os.Exit(1)
-}
-
 // insertConfigFile checks for the existence of a configuration file and
 // inserts it as @file before the command line arguments. This causes kingpin
 // to read the contents of this file as arguments.
@@ -81,22 +66,6 @@ func insertConfigFile(args []string, configFile string) []string {
 	}
 	log.Debugf("Using %q as config file", configFile)
 	return append([]string{"@" + configFile}, args...)
-}
-
-// setupLogging configures the logging parameters from the command line
-// options and other conditions.
-func setupLogging(cfg globalConfig) {
-	// If stdout does not point to a tty, assume we're using syslog/journald
-	// and remove the timestamp, since those systems already add it.
-	if fi, _ := os.Stdout.Stat(); (fi.Mode() & os.ModeCharDevice) == 0 {
-		os.Setenv("RLOG_LOG_NOTIME", "yes")
-	}
-
-	if *cfg.verbose {
-		os.Setenv("RLOG_LOG_LEVEL", "DEBUG")
-		os.Setenv("RLOG_CALLER_INFO", "yes")
-	}
-	log.UpdateEnv()
 }
 
 // randomTopic generates a random topic name based on the SHA256 of the cryptPassword.
@@ -243,13 +212,14 @@ func main() {
 	// Initialize redact object.
 	redact = redactType{*cfg.redactlevel}
 
-	// MQTT debugging (FIXME)
-	//if *cfg.mqttdebug {
-	//    mqtt.DEBUG = log.Debug
-	//    mqtt.ERROR = log.New()
-	//    mqtt.CRITICAL = log.New()
-	//    mqtt.WARN = log.New()
-	//}
+	// MQTT debugging
+	if *cfg.mqttdebug {
+		mqttlog := rlogger{}
+		mqtt.DEBUG = mqttlog
+		mqtt.ERROR = mqttlog
+		mqtt.CRITICAL = mqttlog
+		mqtt.WARN = mqttlog
+	}
 
 	// If no server was specified, we assume a connection to a public server
 	// (test.mosquitto.org).  There's a number of parameters that we need to

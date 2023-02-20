@@ -1,7 +1,6 @@
 # Main binary
 clips
 clipsync
-AppDir
 
 # Vim cruft
 *.sw?
@@ -11,6 +10,7 @@ AppDir
 *.dll
 *.so
 *.dylib
+*.AppImage
 
 # Test binary, build with `go test -c`
 *.test
@@ -20,3 +20,4 @@ AppDir
 
 # Directories
 arch
+AppDir

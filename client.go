@@ -255,43 +255,49 @@ func syncClips(broker mqtt.Client, xsel *xselection, topic, xprimary, xclipboard
 	memClipboard := xsel.getMemClipboard()
 	memPrimary := xsel.getMemPrimary()
 
+	log.Debugf("X primary: %s", redact.redact(xclipboard))
 	log.Debugf("X clipboard: %s", redact.redact(xclipboard))
-	log.Debugf("mem primary: %s", redact.redact(memPrimary))
-	log.Debugf("mem clipboard: %s", redact.redact(memClipboard))
+	log.Debugf("Memory primary: %s", redact.redact(memPrimary))
+	log.Debugf("Memory clipboard: %s", redact.redact(memClipboard))
 
 	if xclipboard != "" && xclipboard != memClipboard {
-		log.Debugf("Syncing clipboard -> X PRIMARY and memory primary/clipboard")
-		if err := xsel.setXPrimary(xclipboard); err != nil {
-			return "", err
+		// Only copy clipboard to primary if they differ. Otherwise, we end up
+		// losing the "selected" mark (inverted text) on some programs, notably
+		// gnome terminal (and possibly other vte based terminals,) which
+		// always sets both the clipboard and primary on select.
+		if xclipboard != xprimary {
+			log.Debugf("Syncing clipboard -> X primary")
+			if err := xsel.setXPrimary(xclipboard); err != nil {
+				return "", err
+			}
 		}
 		log.Debugf("Syncing clipboard -> memory primary")
 		xsel.setMemPrimary(xclipboard)
 
 		log.Debugf("Syncing clipboard -> memory clipboard")
 		xsel.setMemClipboard(xclipboard)
+
 		pub = xclipboard
-
-		// X primary changed? Sync to memory and X clipboard.
 	} else if xprimary != "" && xprimary != memPrimary {
-		log.Debugf("X primary: %s", redact.redact(xprimary))
-		log.Debugf("mem clipboard: %s", redact.redact(xsel.getMemClipboard()))
-
-		log.Debugf("Syncing primary -> X CLIPBOARD")
-		if err := xsel.setXClipboard(xprimary); err != nil {
-			return "", err
+		if xclipboard != xprimary {
+			log.Debugf("Syncing primary -> X CLIPBOARD")
+			if err := xsel.setXClipboard(xprimary); err != nil {
+				return "", err
+			}
 		}
-		// primary changed, sync to clipboard.
+
 		log.Debugf("Syncing primary -> memory primary")
 		xsel.setMemPrimary(xprimary)
 
 		log.Debugf("Syncing primary -> X CLIPBOARD and memory clipboard")
 		xsel.setMemClipboard(xprimary)
+
 		pub = xprimary
 	}
 
 	// Publish to server, if needed
 	if pub != "" {
-		log.Debugf("requesting publication of: %s", redact.redact(pub))
+		log.Debugf("Requesting publication of: %s", redact.redact(pub))
 	}
 	return pub, nil
 }

@@ -22,7 +22,7 @@ jobs:
       - name: Build
         run: |
           sudo apt-get install pandoc --yes
-          make arch
+          make appimage
 
       - uses: "marvinpinto/action-automatic-releases@latest"
         with:

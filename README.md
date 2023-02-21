@@ -2,31 +2,19 @@
 
 ## Description
 
-This program runs as a systemd service (or anything else that puts it in
-background) and connects to a Mosquitto ([MQTT](http://mosquitto.org)) broker
-of your choice. It then monitors the X clipboard once every two seconds (using
-`xclip`) and uploads an encrypted representation of your clipboard to the MQTT
-broker on every change. Once that happens, your remote clipsync instances
-retrieve the clipboard contents from MQTT, decrypt it and populate the remote
-clipboard with your local copy.
+**clipsync** monitors your Linux clipboard (and primary selection) and synchronizes them across multiple computers.
 
-Both the X clipboard (Ctrl-C/Ctrl-V) and primary X selection (select with the
-mouse, paste using middle mouse button) are synchronized, with the option to
-synchronize between the local clipboard and selection automatically.
+The program requires access to a Mosquitto ([MQTT](http://mosquitto.org)) broker to do its work. If no private MQTT broker is available, **clipsync** connects to a public broker and uses a randomly created channel name. The contents of your clipboard are encrypted to avoid any chances of eavesdropping.
+
+Both the X clipboard (Ctrl-C/Ctrl-V) and primary X selection (select with the mouse, paste using middle mouse button) are synchronized, with the option to synchronize between the local clipboard and primary selection automatically.
 
 ## Basic principle of operation
 
 * Set you your own MQTT broker or choose a free one (default if no server specified).
-* Run the program on your local workstation running X and any remote workstations
-  with the same set of configuration files (mqtt broker, clipboard encryption password, etc)
-* Work as usual. Any changes to the local clipboard (Ctrl-C) or primary selection
-  (selecting with the mouse, pasting with middle click) will populate the remote
-  clipboards as well.
-* Remove (or local) servers without X can still use `clipsync copy` and
-  `clipsync paste` to send stdin to a set of remote servers or receive the
-  remote clipboard standard output.
-* You can also easily send the output of a program to all of your other workstations,
-  using `clipsync copy`.
+* Run the program on your local workstation running X and any remote workstations with the same set of configuration files (MQTT broker, clipboard encryption password, etc).
+* Work as usual. Any changes to the local clipboard (Ctrl-C) or primary selection (selecting with the mouse, pasting with middle click) will populate the remote clipboards as well.
+* Remote (or local) servers without X can still use `clipsync copy` and `clipsync paste` to send stdin to a set of remote servers or receive the remote clipboard standard output.
+* You can also easily send the output of a program to all of your other workstations, using `clipsync copy`.
 
 ## Pre-requisites
 
@@ -34,46 +22,34 @@ synchronize between the local clipboard and selection automatically.
 * `xclip` installed (under Debian and related systems, run `sudo apt-get install xclip`)
 * An account on a private or public MQTT broker (see below).
 
-## Obtaining an MQTT account
-
-There are a few ways to go abount an MQTT account:
-
-* Use the default, the mosquitto.org test (public) server. For this to happen, just
-  run `clipsync client` without specifying a server with the `--server` flag. This
-  directs the program to use clipboard encryption, a random topic and the free servers.
-  This option is the default and should be zero work. Note that public servers may
-  become unavailable, so YMMV.
-
-* Create a free account in one of the [many available public brokers](https://mntolia.com/10-free-public-private-mqtt-brokers-for-testing-prototyping/). Please make sure the server you choose supports message retention. Some
-don't even require a login and anyone could in theory subscribe to your clipboard. In practice
-that's not a problem since the contents of your clipboard are encrypted.
-
-* Set up your own mosquitto broker. A small VM should be sufficient as Mosquitto is
-  very modest with resources. Installation of a private broker is outside the scope of
-  this documentation, but there are [excellent resources](https://www.digitalocean.com/community/tutorials/how-to-install-and-secure-the-mosquitto-mqtt-messaging-broker-on-debian-10) on the Internet for that.
-
 ## Downloading clipsync
 
-The easiest way is to download a binary for your platform directly on the [releases page](https://github.com/marcopaganini/clipsync/releases). Save this binary in a common location like `/usr/local/bin` and
-make sure to `chmod 755 /usr/local/bin/clipsync'
+1. Download a binary for your platform directly on the [releases page](https://github.com/marcopaganini/clipsync/releases). Binaries use AppImage, so they should run without effort across Linux distributions.
+1. Make the binary executable with `chmod 755 <appimage_name>`.
+1. Copy the binary to `/usr/local/bin` with `sudo cp <appimage_name> /usr/local/bin`
 
 Or, if you have go installed, just clone this repository (`git clone https://github.com/marcopaganini/clipsync`)
 and run `make` inside the repo root directory.
 
-## Configuring clipsync
+## Running clipsync
 
-If you just run `clipsync client`, no configuration is required. The program
-will connect to the public mqtt broker and set the correct parameters. It will
-also create a clipboard encryption key under `$HOME/.config/clipsync`. **Make
-sure all machines sharing clipboard have the same versions of these files**.
+### Using the default MQTT server (no MQTT setup needed)
+
+On your main workstation, just run `clipsync client`. Clipsync will create the initial random password and connect to the default MQTT broker. Note that clipsync will not put itself in the background automatically (more on that below).
+
+To sync with other computers:
+
+* Copy the file `~/.config/clipsync/crypt-password` to the same location on the remote computer.
+* If you also run X remotely (E.g, via VNC or something similar), run `clipsync client` there. Anything copied to the local clipboard should also be on the remote clipboard and vice-versa.
+* If you don't run X remotely (E.g, access via SSH), you can still use `clipsync copy` and `clipsync paste` to access the synced clipboard.
+
+It's important to make sure that all computers have the same `~/.config/clipsync/crypt-password`, or things won't work as expected.
 
 If all you need is to sync your clipboard, you can safely skip the rest of this section.
 
-For more complex configurations, it's possible to specify all configuration
-items directly on the command-line.  However, this would make it easier for
-eavesdroppers (with access to your workstation) to see your user, password, and
-encryption password. The recommended way is to create a configuration file
-under your home directory:
+### Using a private MQTT server
+
+For more complex configurations, it's possible to specify all configuration items directly on the command-line.  However, this would make it easier for eavesdroppers (with access to your workstation) to see your user, password, and encryption password. The recommended way is to create a configuration file under your home directory:
 
 ```
 mkdir -p ~/.config/clipsync
@@ -87,36 +63,41 @@ cat >~/.config/clipsync/config <<EOF
 EOF
 ```
 
-Where:
-* `--user`: Specify your username on the remote MQTT broker (or leave blank if no user.)
-* `--server`:  The MQTT URL of your server. For SSL encrypted connections, this should be something alone the
-  lines of "ssl://mqtt_server.xxx:port". Port 8883 is a common port for SSL enabled MQTT brokers.
-* `--password-file`: Is the file containing the MQTT broker password. We'll create this file next.
-* `--cryptpass-file:` Is the file containing the password to encrypt the CONTENTS of your clipboard on the remote server. If you run your own server, this is not necessary, but won't hurt. Choose anything large enough. We'll
-create this file next
-* `--redact-level=6`: Tells clipsync to only log the first and last three characters of your clipboard in the local log.
+Remember that clipsync will generate a `crypt-password` file automatically the first time it runs, and this file **must be identical on all computers that are synchronizing their clipboards**.
 
-Now, create the password and encrypted message password files:
+Where:
+* `--user`: your username on the remote MQTT broker (or leave blank if no user.)
+* `--server`:  the MQTT URL of your broker. For SSL encrypted connections, this should be something along the
+  lines of "ssl://mqtt_server.xxx:port". Port 8883 is a common port for SSL enabled MQTT brokers.
+* `--password-file`: file containing the MQTT broker password. We'll create this file next.
+* `--cryptpass-file:` file containing the password to encrypt the CONTENTS of your clipboard on the remote server.
+* `--redact-level=6`: tells clipsync to only log the first and last three characters of your clipboard in the local log.
+
+Now, create the MQTT account password file:
 
 ```
 echo "my_server_password" >~/.config/clipsync/secret
-echo "any_large_enough_password_with_666_numbers_and_signs!" >~/.config/clipsync/crypt-password
 ```
 
-## Test run
+## Obtaining an MQTT account
 
-To test, just run `clipsync -v client` and clipsync should connect to the public
-MQTT broker and wait for clipboard changes. Copy a few items to the clipboard
-and watch for activity in the log. You can copy the entire contents of
-`~/.config/clipsync` to other workstations and run `clipsync -v client` from there
-as well. Clipboards should be synced.
+There are a few ways to go about an MQTT account:
 
-## Production run
+* Use the default mosquitto.org test (public) server. For this to happen, just run `clipsync client` without specifying a server with the `--server` flag.  This directs the program to use clipboard encryption, a random topic and the free servers.  This option is the default and should be zero work. Note that public servers may become unavailable, so YMMV.
+
+* Create a free account in one of the [many available public brokers](https://mntolia.com/10-free-public-private-mqtt-brokers-for-testing-prototyping/). Please make sure the server you choose supports message retention. Some
+don't even require a login and anyone could in theory subscribe to your clipboard. In practice
+that's not a problem since the contents of your clipboard are encrypted.
+
+* Set up your own mosquitto broker. A small VM or Raspberry Pi should be sufficient as Mosquitto is very modest with resources. Installation of a private broker is outside the scope of this documentation, but there are [excellent resources](https://www.digitalocean.com/community/tutorials/how-to-install-and-secure-the-mosquitto-mqtt-messaging-broker-on-debian-10) on the Internet for that.
+
+
+## Automating startup using systemd
 
 The easiest way to run clipsync is by using a user systemd unit. This guarantees that the program will
-run automatically on login. To that effect:
+run automatically on login. To do that:
 
-* Download the [clipsync.service](https://github.com/marcopaganini/clipsync/blob/master/extras/systemd/clipsync.service) into your user systemd units directory, `~/.config/systemd/user`.
+* Download the [clipsync.service](https://github.com/marcopaganini/clipsync/blob/master/extras/systemd/clipsync.service) file into your user systemd units directory, `~/.config/systemd/user`.
 * If you prefer to synchronize your clipboard to your selection, edit the systemd unit file above and change
   the `ExecStart` command to `ExecStart=/usr/local/bin/clipsync -v client --sync-selections`
 * Run `systemctl --user daemon-reload` to reload the configuration.
@@ -140,10 +121,8 @@ edit your `~/.tmux.conf` file and add:
 
 ## Caveats
 
-* Some of the free MQTT servers are not that clear on their use. I plan to find a "recommended" option and
-  change this documentation accordingly.
-* Clipboard and selection management under X is, frankly, a complete mess. Some programs won't accept the
-  primary selection (middle click of the mouse) and require a Ctrl-C/Ctrl-V.
+* Some of the free MQTT servers are not that clear on their use. I plan to find a "recommended" option and change this documentation accordingly.
+* Clipboard and selection management under X is messy. Some programs won't accept the primary selection (middle click of the mouse) and require a Ctrl-C/Ctrl-V. Others (like gnome-terminal) will always update both the primary selection and the clipboard once anything is selected with the mouse.
 
 ## Alternatives
 

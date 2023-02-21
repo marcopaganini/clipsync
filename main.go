@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/alecthomas/kingpin/v2"
@@ -22,6 +23,7 @@ const (
 	configDir         = "~/.config/clipsync"
 	configFile        = "config"
 	cryptPasswordFile = "crypt-password"
+	syncerLockDir     = "/var/run/lock"
 )
 
 // BuildVersion Holds the current git HEAD version number.
@@ -255,7 +257,20 @@ func main() {
 
 	case clientCmd.FullCommand():
 		// Single instance of client.
-		lock := singleInstanceOrDie(syncerLockFile)
+		// Client mode only makes sense if the DISPLAY environment
+		// variable is set (otherwise we don't have a clipboard to sync).
+		display := os.Getenv("DISPLAY")
+		if display == "" {
+			fatal("Client mode requires the DISPLAY variable to be set")
+		}
+		re := regexp.MustCompile(`:[0-9]+`)
+		match := re.FindString(display)
+		if match == "" {
+			fatalf("Unable to parse display number from DISPLAY environment var: %s", display)
+		}
+		lckfile := fmt.Sprintf("%s/clipsync-lock-%s.lock", syncerLockDir, match[1:])
+		log.Debugf("Using lockfile: %s", lckfile)
+		lock := singleInstanceOrDie(lckfile)
 		defer lock.Unlock()
 
 		if err := clientcmd(cfg, clientcfg, cryptPassword); err != nil {

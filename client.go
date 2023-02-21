@@ -5,16 +5,11 @@ package main
 import (
 	"crypto/md5"
 	"fmt"
-	"os"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/patrickmn/go-cache"
 	log "github.com/romana/rlog"
-)
-
-const (
-	syncerLockFile = "/var/run/lock/clipsync-client.lock"
 )
 
 type delayedPublishChan struct {
@@ -27,12 +22,6 @@ type delayedPublishChan struct {
 // clientcmd activates "client" mode, syncing the local clipboard to the server
 // and vice-versa. This function will only return in case of error.
 func clientcmd(cfg globalConfig, clientcfg clientConfig, cryptPassword []byte) error {
-	// Client mode only makes sense if the DISPLAY environment
-	// variable is set (otherwise we don't have a clipboard to sync).
-	if os.Getenv("DISPLAY") == "" {
-		return fmt.Errorf("Client mode requires the DISPLAY variable to be set")
-	}
-
 	log.Infof("Starting client, server: %s", *cfg.server)
 
 	xsel := &xselection{}

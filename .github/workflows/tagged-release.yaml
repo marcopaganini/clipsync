@@ -27,9 +27,9 @@ jobs:
 
       - name: Build
         run: |
+          export APPIMAGE_EXTRACT_AND_RUN=1
           PATH=".:$PATH"; make appimage
-        env:
-          APPIMAGE_EXTRACT_AND_RUN=1
+
       - uses: "marvinpinto/action-automatic-releases@latest"
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"

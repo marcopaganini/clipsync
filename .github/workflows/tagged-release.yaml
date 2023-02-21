@@ -19,10 +19,15 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get install libx11-dev libxfixes-dev --yes
+          wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+
       - name: Build
         run: |
-          sudo apt-get install pandoc --yes
-          make appimage
+          PATH=".:$PATH"; make appimage
 
       - uses: "marvinpinto/action-automatic-releases@latest"
         with:

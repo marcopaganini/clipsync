@@ -12,25 +12,20 @@ import (
 
 // pastecmd prints the first message from the server (all messages are sent
 // with persist).
-func pastecmd(cfg globalConfig, cryptPassword []byte) error {
-	log.Debug("Got paste command")
+func pastecmd(cfg globalConfig, instanceID string, cryptPassword []byte) error {
 	ch := make(chan string)
 
 	broker, err := newBroker(cfg, func(client mqtt.Client, msg mqtt.Message) {
-		var err error
-
 		data := string(msg.Payload())
 
-		if len(cryptPassword) > 0 {
-			data, err = decrypt64(data, cryptPassword)
-			if err != nil {
-				log.Error(err)
-				data = ""
-			}
+		mqttmsg, err := decodeMQTT(data, cryptPassword)
+		if err != nil {
+			log.Debug(err)
+			ch <- ""
+			return
 		}
-
-		log.Debugf("Received from server: %s", redact.redact(data))
-		ch <- data
+		log.Debugf("Received from server [%s]: %s", mqttmsg.InstanceID, redact.redact(mqttmsg.Message))
+		ch <- mqttmsg.Message
 	})
 	if err != nil {
 		return fmt.Errorf("Unable to connect to broker: %v", err)

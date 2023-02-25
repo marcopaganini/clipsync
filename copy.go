@@ -10,7 +10,7 @@ import (
 )
 
 // copycmd reads the stdin and sends it to the broker (server).
-func copycmd(cfg globalConfig, cryptPassword []byte, filter bool) error {
+func copycmd(cfg globalConfig, instanceID string, cryptPassword []byte, filter bool) error {
 	broker, err := newBroker(cfg, nil)
 	if err != nil {
 		return fmt.Errorf("Unable to connect to broker: %v", err)
@@ -22,7 +22,7 @@ func copycmd(cfg globalConfig, cryptPassword []byte, filter bool) error {
 	defer broker.Disconnect(1)
 	spub := string(pub)
 
-	publish(broker, *cfg.topic, spub, cryptPassword)
+	publish(broker, *cfg.topic, spub, instanceID, cryptPassword)
 	if filter {
 		fmt.Print(spub)
 	}

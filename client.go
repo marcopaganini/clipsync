@@ -3,7 +3,10 @@
 package main
 
 import (
+	"bytes"
 	"crypto/md5"
+	"encoding/gob"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,19 +19,27 @@ type delayedPublishChan struct {
 	broker        mqtt.Client
 	topic         string
 	content       string
+	instanceID    string
 	cryptPassword []byte
+}
+
+// Lineformat contains the line format for mqtt messages. All attributes must
+// be exported since this will be serialized into something else before transmission.
+type Lineformat struct {
+	InstanceID string
+	Message    string
 }
 
 // clientcmd activates "client" mode, syncing the local clipboard to the server
 // and vice-versa. This function will only return in case of error.
-func clientcmd(cfg globalConfig, clientcfg clientConfig, cryptPassword []byte) error {
+func clientcmd(cfg globalConfig, clientcfg clientConfig, instanceID string, cryptPassword []byte) error {
 	log.Infof("Starting client, server: %s", *cfg.server)
 
 	xsel := &xselection{}
 	hashcache := cache.New(24*time.Hour, 24*time.Hour)
 
 	broker, err := newBroker(cfg, func(client mqtt.Client, msg mqtt.Message) {
-		subHandler(client, msg, xsel, hashcache, *clientcfg.syncsel, cryptPassword)
+		subHandler(client, msg, xsel, hashcache, *clientcfg.syncsel, instanceID, cryptPassword)
 	})
 
 	if err != nil {
@@ -36,51 +47,51 @@ func clientcmd(cfg globalConfig, clientcfg clientConfig, cryptPassword []byte) e
 	}
 
 	// Loops forever sending any local clipboard changes to broker.
-	clientloop(broker, xsel, clientcfg, *cfg.topic, cryptPassword)
+	clientloop(broker, xsel, clientcfg, *cfg.topic, instanceID, cryptPassword)
 
 	// This should never happen.
 	return nil
 }
 
-// subHandler is called by when new data is available and updates the
-// clipboard with the remote clipboard.
-func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcache *cache.Cache, syncsel bool, cryptPassword []byte) {
+// subHandler is called when new data is available in the MQTT broker.
+func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcache *cache.Cache, syncsel bool, instanceID string, cryptPassword []byte) {
+	data := string(msg.Payload())
 	xprimary := xsel.getXPrimary("")
 
-	var err error
+	var hash string
 
-	data := string(msg.Payload())
 	if len(cryptPassword) > 0 {
 		// Ignore duplicate encrypted messages as they should never happen.
-		md5 := fmt.Sprintf("%x", md5.Sum(msg.Payload()))
-		if _, found := hashcache.Get(md5); found {
+		hash = fmt.Sprintf("%x", md5.Sum(msg.Payload()))
+		if _, found := hashcache.Get(hash); found {
 			log.Debugf("Ignoring duplicate encrypted message: %s", data)
 			return
 		}
-		data, err = decrypt64(data, cryptPassword)
-		if err != nil {
-			log.Error(err)
-			return
-		}
-		if data == "" {
-			log.Debugf("Received zero-length encrypted payload from server. Ignoring.")
-			return
-		}
-		// At this point, we have a good encrypted message, so save the hash in
-		// the cache.
-		hashcache.Set(md5, true, cache.DefaultExpiration)
 	}
 
-	if data == "" {
+	mqttmsg, err := decodeMQTT(data, cryptPassword)
+	if err != nil {
+		log.Debug(err)
+		return
+	}
+
+	// At this point, we know we have a good message, If encryption was
+	// used, save the hash in the cache so we can check for duplicated
+	// encrypted messages later.
+	if len(cryptPassword) > 0 {
+		hashcache.Set(hash, true, cache.DefaultExpiration)
+	}
+
+	if mqttmsg.Message == "" {
 		log.Debugf("Received zero-length data from server. Ignoring.")
 		return
 	}
 
-	log.Debugf("Received from server: %s", redact.redact(data))
+	log.Debugf("Received from server [%s]: %s", mqttmsg.InstanceID, redact.redact(mqttmsg.Message))
 	log.Debugf("Current X primary selection: %s", redact.redact(xprimary))
 
 	// Same data we already have? Return.
-	if data == xprimary {
+	if mqttmsg.Message == xprimary {
 		log.Debugf("Server data and primary selection are identical. Returning.")
 		return
 	}
@@ -88,18 +99,46 @@ func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcach
 	// This function only gets called if we have real data available, so we can
 	// set the primary and memory clipboards directly if we have changes.
 	log.Debugf("Server data != Current X primary selection. Writing to primary.")
-	if err := xsel.setXPrimary(data); err != nil {
+
+	if err := xsel.setXPrimary(mqttmsg.Message); err != nil {
 		log.Errorf("Unable to set X Primary selection: %v", err)
 	}
-	xsel.setMemPrimary(data)
+	xsel.setMemPrimary(mqttmsg.Message)
 
-	if syncsel && xsel.getXClipboard("text/plain") != data {
+	if syncsel && xsel.getXClipboard("text/plain") != mqttmsg.Message {
 		log.Debugf("Primary <-> Clipboard sync requested. Setting clipboard.")
-		if err := xsel.setXClipboard(data); err != nil {
+		if err := xsel.setXClipboard(mqttmsg.Message); err != nil {
 			log.Errorf("Unable to set X Clipboard: %v", err)
 		}
-		xsel.setMemClipboard(data)
+		xsel.setMemClipboard(mqttmsg.Message)
 	}
+}
+
+// decodeMQTT decodes a gob encoded Lineformat object (read from MQTT) and
+// attempts to decrypt it if a cryptPassword was specified. Returns the
+// (unencrypted) Lineformat object.
+func decodeMQTT(data string, cryptPassword []byte) (Lineformat, error) {
+	var err error
+
+	plain := data
+	if len(cryptPassword) > 0 {
+		plain, err = decrypt64(data, cryptPassword)
+		if err != nil {
+			return Lineformat{}, err
+		}
+	}
+	if plain == "" {
+		return Lineformat{}, errors.New("ignoring zero-length message received from broker")
+	}
+
+	// At this point plain contains a gob encoded Lineformat structure.
+	buf := bytes.NewBufferString(plain)
+	dec := gob.NewDecoder(buf)
+	var mqttmsg Lineformat
+	if err = dec.Decode(&mqttmsg); err != nil {
+		return Lineformat{}, fmt.Errorf("Error decoding MQTT message: %v", err)
+	}
+	return mqttmsg, nil
 }
 
 // clientloop periodically reads from this machine's primary selection
@@ -119,7 +158,7 @@ func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcach
 // Note: For now, reading and writing to the clipboard is somewhat of an
 // expensive operation as it requires calling xclip. This will be changed in a
 // future version, which should allow us to simplify this function.
-func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, topic string, cryptPassword []byte) {
+func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, topic, instanceID string, cryptPassword []byte) {
 	var err error
 
 	dpchan := make(chan delayedPublishChan, 1)
@@ -179,27 +218,43 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 				broker:        broker,
 				topic:         topic,
 				content:       pub,
+				instanceID:    instanceID,
 				cryptPassword: cryptPassword,
 			}
 		}
 	}
 }
 
-// publish publishes the given string to the desired topic.
-func publish(broker mqtt.Client, topic, s string, cryptPassword []byte) {
+// publish forms a Lineformat message using the instanceID and string, and
+// publishes it to the desired topic. This message does not return errors,
+// but logs them using log.Debugf().
+func publish(broker mqtt.Client, topic, s, instanceID string, cryptPassword []byte) {
 	// Set in-memory primary selection and publish to server.
-	log.Debugf("Publishing primary selection: %s", redact.redact(s))
+	log.Debugf("Publishing primary selection [%s]: %s", instanceID, redact.redact(s))
 
-	var err error
+	// Encode message and instance ID.
+	var buf bytes.Buffer
+	mqttmsg := Lineformat{
+		InstanceID: instanceID,
+		Message:    s,
+	}
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(mqttmsg)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	var cryptdata string
 	if len(cryptPassword) > 0 {
-		s, err = encrypt64(s, cryptPassword)
+		cryptdata, err = encrypt64(buf.String(), cryptPassword)
 		if err != nil {
 			log.Error(err)
 			return
 		}
 	}
 
-	if token := broker.Publish(topic, 0, true, s); token.Wait() && token.Error() != nil {
+	if token := broker.Publish(topic, 0, true, cryptdata); token.Wait() && token.Error() != nil {
 		log.Errorf("Error publishing to server: %v", token.Error())
 	}
 }
@@ -220,6 +275,7 @@ func delayedPublish(ch chan delayedPublishChan) {
 				broker:        c.broker,
 				topic:         c.topic,
 				content:       c.content,
+				instanceID:    c.instanceID,
 				cryptPassword: c.cryptPassword,
 			}
 			continue
@@ -227,7 +283,7 @@ func delayedPublish(ch chan delayedPublishChan) {
 		case <-time.After(1 * time.Second):
 			// Safeguard: Only publish if some content is available.
 			if dp.content != "" {
-				publish(dp.broker, dp.topic, dp.content, dp.cryptPassword)
+				publish(dp.broker, dp.topic, dp.content, dp.instanceID, dp.cryptPassword)
 				dp = delayedPublishChan{}
 			}
 		}

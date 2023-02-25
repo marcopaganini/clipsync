@@ -244,14 +244,18 @@ func main() {
 		fatal("I don't have a server right before starting to work. This should not happen.")
 	}
 
+	// Unique instance ID.
+	instanceID := randomID()
+	log.Debugf("Instance ID: %s", instanceID)
+
 	switch cmdline {
 	case pasteCmd.FullCommand():
-		if err := pastecmd(cfg, cryptPassword); err != nil {
+		if err := pastecmd(cfg, instanceID, cryptPassword); err != nil {
 			fatal(err)
 		}
 
 	case copyCmd.FullCommand():
-		if err := copycmd(cfg, cryptPassword, *copyCmdFilter); err != nil {
+		if err := copycmd(cfg, instanceID, cryptPassword, *copyCmdFilter); err != nil {
 			fatal(err)
 		}
 
@@ -273,7 +277,7 @@ func main() {
 		lock := singleInstanceOrDie(lckfile)
 		defer lock.Unlock()
 
-		if err := clientcmd(cfg, clientcfg, cryptPassword); err != nil {
+		if err := clientcmd(cfg, clientcfg, instanceID, cryptPassword); err != nil {
 			fatal(err)
 		}
 

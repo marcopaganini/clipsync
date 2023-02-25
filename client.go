@@ -104,14 +104,11 @@ func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcach
 	if err := xsel.setXPrimary(mqttmsg.Message); err != nil {
 		log.Errorf("Unable to set X Primary selection: %v", err)
 	}
-	xsel.setMemPrimary(mqttmsg.Message)
-
-	if syncsel && xsel.getXClipboard("text/plain") != mqttmsg.Message {
-		log.Debugf("Primary <-> Clipboard sync requested. Setting clipboard.")
-		if err := xsel.setXClipboard(mqttmsg.Message); err != nil {
-			log.Errorf("Unable to set X Clipboard: %v", err)
-		}
-		xsel.setMemClipboard(mqttmsg.Message)
+	if syncsel {
+		// We call syncClips with the new primary contents and set xclipboard
+		// to getMemClipboard. This guarantee that we'll never sync from the
+		// clipboard to the just received primary.
+		syncClips(broker, xsel, mqttmsg.Message, xsel.getMemClipboard())
 	}
 }
 
@@ -201,7 +198,7 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 		var pub string
 
 		if *clientcfg.syncsel {
-			if pub, err = syncClips(broker, xsel, topic, xprimary, xclipboard); err != nil {
+			if pub, err = syncClips(broker, xsel, xprimary, xclipboard); err != nil {
 				log.Errorf("Error syncing selections (primary/clipboard): %v", err)
 			}
 		} else if memPrimary != xprimary {
@@ -293,7 +290,7 @@ func delayedPublish(ch chan delayedPublishChan) {
 
 // syncClips synchronize the primary selection to the clipboard (and vice-versa),
 // and returns a non-blank string if it needs to be published.
-func syncClips(broker mqtt.Client, xsel *xselection, topic, xprimary, xclipboard string) (string, error) {
+func syncClips(broker mqtt.Client, xsel *xselection, xprimary, xclipboard string) (string, error) {
 	var pub string
 
 	// Ignore blank returns as they could be an error in xclip or no

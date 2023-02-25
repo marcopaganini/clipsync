@@ -9,8 +9,6 @@ import (
 	"os/exec"
 	"sync"
 	"time"
-
-	log "github.com/romana/rlog"
 )
 
 const (
@@ -103,7 +101,7 @@ func (x *xselection) setXSelection(sel string, contents string) error {
 		return fmt.Errorf("Error waiting for xclip: %v", err)
 	}
 
-	log.Debugf("Set selection(%s) to: %s", sel, redact.redact(contents))
+	//log.Debugf("Set selection(%s) to: %s", sel, redact.redact(contents))
 	return nil
 }
 

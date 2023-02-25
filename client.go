@@ -133,9 +133,9 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 			continue
 		}
 
-		// Restore the primary selection to the saved value if it contains
-		// a single rune and chromeQuirk is set.
 		xprimary := xsel.getXPrimary("")
+		xclipboard := xsel.getXClipboard("text/plain")
+		log.Debugf("Clipboard CHANGED: primary=%s, clipboard=%s", redact.redact(xprimary), redact.redact(xclipboard))
 
 		// Do nothing on xclip error/empty clipboard.
 		if xprimary == "" {
@@ -161,7 +161,7 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 		var pub string
 
 		if *clientcfg.syncsel {
-			if pub, err = syncClips(broker, xsel, topic, xprimary, xsel.getXClipboard("text/plain")); err != nil {
+			if pub, err = syncClips(broker, xsel, topic, xprimary, xclipboard); err != nil {
 				log.Errorf("Error syncing selections (primary/clipboard): %v", err)
 			}
 		} else if memPrimary != xprimary {
@@ -244,7 +244,7 @@ func syncClips(broker mqtt.Client, xsel *xselection, topic, xprimary, xclipboard
 	memClipboard := xsel.getMemClipboard()
 	memPrimary := xsel.getMemPrimary()
 
-	log.Debugf("X primary: %s", redact.redact(xclipboard))
+	log.Debugf("X primary: %s", redact.redact(xprimary))
 	log.Debugf("X clipboard: %s", redact.redact(xclipboard))
 	log.Debugf("Memory primary: %s", redact.redact(memPrimary))
 	log.Debugf("Memory clipboard: %s", redact.redact(memClipboard))
@@ -254,32 +254,32 @@ func syncClips(broker mqtt.Client, xsel *xselection, topic, xprimary, xclipboard
 		// losing the "selected" mark (inverted text) on some programs, notably
 		// gnome terminal (and possibly other vte based terminals,) which
 		// always sets both the clipboard and primary on select.
+		log.Debugf("Syncing X clipboard -> X primary")
 		if xclipboard != xprimary {
-			log.Debugf("Syncing clipboard -> X primary")
+			log.Debugf("Setting X primary = X clipboard: %s", redact.redact(xclipboard))
 			if err := xsel.setXPrimary(xclipboard); err != nil {
 				return "", err
 			}
 		}
-		log.Debugf("Syncing clipboard -> memory primary")
+		log.Debugf("Setting mem primary = X clipboard: %s", redact.redact(xclipboard))
+		log.Debugf("Setting mem clipboard = X clipboard: %s", redact.redact(xclipboard))
 		xsel.setMemPrimary(xclipboard)
-
-		log.Debugf("Syncing clipboard -> memory clipboard")
 		xsel.setMemClipboard(xclipboard)
 
 		pub = xclipboard
 	} else if xprimary != "" && xprimary != memPrimary {
+		log.Debugf("Syncing X primary -> X clipboard")
 		if xclipboard != xprimary {
-			log.Debugf("Syncing primary -> X CLIPBOARD")
+			log.Debugf("Setting X clipboard = X primary: %s", redact.redact(xprimary))
 			if err := xsel.setXClipboard(xprimary); err != nil {
 				return "", err
 			}
 		}
 
-		log.Debugf("Syncing primary -> memory primary")
-		xsel.setMemPrimary(xprimary)
-
-		log.Debugf("Syncing primary -> X CLIPBOARD and memory clipboard")
+		log.Debugf("Setting mem clipboard = X primary: %s", redact.redact(xprimary))
+		log.Debugf("Setting mem primary = X primary: %s", redact.redact(xprimary))
 		xsel.setMemClipboard(xprimary)
+		xsel.setMemPrimary(xprimary)
 
 		pub = xprimary
 	}

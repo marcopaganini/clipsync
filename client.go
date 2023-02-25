@@ -88,13 +88,14 @@ func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcach
 	}
 
 	log.Debugf("Received from server [%s]: %s", mqttmsg.InstanceID, redact.redact(mqttmsg.Message))
-	log.Debugf("Current X primary selection: %s", redact.redact(xprimary))
 
-	// Same data we already have? Return.
-	if mqttmsg.Message == xprimary {
-		log.Debugf("Server data and primary selection are identical. Returning.")
+	// Ignore this message if it's an echo from the mqtt server.
+	if mqttmsg.InstanceID == instanceID {
+		log.Debugf("Ignoring our own message from mqtt server.")
 		return
 	}
+
+	log.Debugf("Current X primary selection: %s", redact.redact(xprimary))
 
 	// This function only gets called if we have real data available, so we can
 	// set the primary and memory clipboards directly if we have changes.

@@ -139,7 +139,11 @@ func subHandler(incoming chan mqttCallback, xsel *xselection, hashcache *cache.C
 			// We call syncClips with the new primary contents and set xclipboard
 			// to getMemClipboard. This guarantee that we'll never sync from the
 			// clipboard to the just received primary.
-			syncClips(broker, xsel, mqttmsg.Message, xsel.getMemClipboard())
+			if _, err := syncClips(broker, xsel, mqttmsg.Message, xsel.getMemClipboard()); err != nil {
+				log.Debug(err)
+				globalMutex.Unlock()
+				continue
+			}
 		}
 		globalMutex.Unlock()
 	}

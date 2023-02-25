@@ -8,6 +8,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -30,16 +31,34 @@ type Lineformat struct {
 	Message    string
 }
 
+// mqttCallback represents the elements from a mqtt.newBroker callback.
+type mqttCallback struct {
+	client mqtt.Client
+	msg    mqtt.Message
+}
+
+// Global mutex used across client functions before they access the clipboard.
+// This avoids race conditions between subHandler and clientloop.
+var globalMutex sync.Mutex
+
 // clientcmd activates "client" mode, syncing the local clipboard to the server
 // and vice-versa. This function will only return in case of error.
 func clientcmd(cfg globalConfig, clientcfg clientConfig, instanceID string, cryptPassword []byte) error {
+	incoming := make(chan mqttCallback, 10)
+
 	log.Infof("Starting client, server: %s", *cfg.server)
 
 	xsel := &xselection{}
 	hashcache := cache.New(24*time.Hour, 24*time.Hour)
 
+	// subHandler blocks on a buffered channel and newBroker feeds the channel with the
+	// relevant information from the callback. The function called by newBroker cannot
+	// block, or it will deadlock the receipt of messages from MQTT.
+	go subHandler(incoming, xsel, hashcache, *clientcfg.syncsel, instanceID, cryptPassword)
 	broker, err := newBroker(cfg, func(client mqtt.Client, msg mqtt.Message) {
-		subHandler(client, msg, xsel, hashcache, *clientcfg.syncsel, instanceID, cryptPassword)
+		incoming <- mqttCallback{
+			client: client,
+			msg:    msg}
 	})
 
 	if err != nil {
@@ -53,62 +72,76 @@ func clientcmd(cfg globalConfig, clientcfg clientConfig, instanceID string, cryp
 	return nil
 }
 
-// subHandler is called when new data is available in the MQTT broker.
-func subHandler(broker mqtt.Client, msg mqtt.Message, xsel *xselection, hashcache *cache.Cache, syncsel bool, instanceID string, cryptPassword []byte) {
-	data := string(msg.Payload())
-	xprimary := xsel.getXPrimary("")
+// subHandler runs as a goroutine and blocks reading on the main channel. Once
+// information is available, it processes the incoming request.
+func subHandler(incoming chan mqttCallback, xsel *xselection, hashcache *cache.Cache, syncsel bool, instanceID string, cryptPassword []byte) {
+	for {
+		ch := <-incoming
+		globalMutex.Lock()
 
-	var hash string
+		payload := ch.msg.Payload()
+		broker := ch.client
 
-	if len(cryptPassword) > 0 {
-		// Ignore duplicate encrypted messages as they should never happen.
-		hash = fmt.Sprintf("%x", md5.Sum(msg.Payload()))
-		if _, found := hashcache.Get(hash); found {
-			log.Debugf("Ignoring duplicate encrypted message: %s", data)
-			return
+		data := string(payload)
+		xprimary := xsel.getXPrimary("")
+
+		var hash string
+
+		if len(cryptPassword) > 0 {
+			// Ignore duplicate encrypted messages as they should never happen.
+			hash = fmt.Sprintf("%x", md5.Sum(payload))
+			if _, found := hashcache.Get(hash); found {
+				log.Debugf("Ignoring duplicate encrypted message: %s", data)
+				globalMutex.Unlock()
+				continue
+			}
 		}
-	}
 
-	mqttmsg, err := decodeMQTT(data, cryptPassword)
-	if err != nil {
-		log.Debug(err)
-		return
-	}
+		mqttmsg, err := decodeMQTT(data, cryptPassword)
+		if err != nil {
+			log.Debug(err)
+			globalMutex.Unlock()
+			continue
+		}
 
-	// At this point, we know we have a good message, If encryption was
-	// used, save the hash in the cache so we can check for duplicated
-	// encrypted messages later.
-	if len(cryptPassword) > 0 {
-		hashcache.Set(hash, true, cache.DefaultExpiration)
-	}
+		// At this point, we know we have a good message, If encryption was
+		// used, save the hash in the cache so we can check for duplicated
+		// encrypted messages later.
+		if len(cryptPassword) > 0 {
+			hashcache.Set(hash, true, cache.DefaultExpiration)
+		}
 
-	if mqttmsg.Message == "" {
-		log.Debugf("Received zero-length data from server. Ignoring.")
-		return
-	}
+		if mqttmsg.Message == "" {
+			log.Debugf("Received zero-length data from server. Ignoring.")
+			globalMutex.Unlock()
+			continue
+		}
 
-	log.Debugf("Received from server [%s]: %s", mqttmsg.InstanceID, redact.redact(mqttmsg.Message))
+		log.Debugf("Received from server [%s]: %s", mqttmsg.InstanceID, redact.redact(mqttmsg.Message))
 
-	// Ignore this message if it's an echo from the mqtt server.
-	if mqttmsg.InstanceID == instanceID {
-		log.Debugf("Ignoring our own message from mqtt server.")
-		return
-	}
+		// Ignore this message if it's an echo from the mqtt server.
+		if mqttmsg.InstanceID == instanceID {
+			log.Debugf("Ignoring our own message from mqtt server.")
+			globalMutex.Unlock()
+			continue
+		}
 
-	log.Debugf("Current X primary selection: %s", redact.redact(xprimary))
+		log.Debugf("Current X primary selection: %s", redact.redact(xprimary))
 
-	// This function only gets called if we have real data available, so we can
-	// set the primary and memory clipboards directly if we have changes.
-	log.Debugf("Server data != Current X primary selection. Writing to primary.")
+		// This function only gets called if we have real data available, so we can
+		// set the primary and memory clipboards directly if we have changes.
+		log.Debugf("Server data != Current X primary selection. Writing to primary.")
 
-	if err := xsel.setXPrimary(mqttmsg.Message); err != nil {
-		log.Errorf("Unable to set X Primary selection: %v", err)
-	}
-	if syncsel {
-		// We call syncClips with the new primary contents and set xclipboard
-		// to getMemClipboard. This guarantee that we'll never sync from the
-		// clipboard to the just received primary.
-		syncClips(broker, xsel, mqttmsg.Message, xsel.getMemClipboard())
+		if err := xsel.setXPrimary(mqttmsg.Message); err != nil {
+			log.Errorf("Unable to set X Primary selection: %v", err)
+		}
+		if syncsel {
+			// We call syncClips with the new primary contents and set xclipboard
+			// to getMemClipboard. This guarantee that we'll never sync from the
+			// clipboard to the just received primary.
+			syncClips(broker, xsel, mqttmsg.Message, xsel.getMemClipboard())
+		}
+		globalMutex.Unlock()
 	}
 }
 
@@ -157,8 +190,6 @@ func decodeMQTT(data string, cryptPassword []byte) (Lineformat, error) {
 // expensive operation as it requires calling xclip. This will be changed in a
 // future version, which should allow us to simplify this function.
 func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, topic, instanceID string, cryptPassword []byte) {
-	var err error
-
 	dpchan := make(chan delayedPublishChan, 1)
 	go delayedPublish(dpchan)
 
@@ -167,8 +198,10 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 		if cnotify() != 0 {
 			log.Errorf("ClipNotify returned error. Will wait and retry.")
 			time.Sleep(time.Duration(2) * time.Second)
+			globalMutex.Unlock()
 			continue
 		}
+		globalMutex.Lock()
 
 		xprimary := xsel.getXPrimary("")
 		xclipboard := xsel.getXClipboard("text/plain")
@@ -176,6 +209,7 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 
 		// Do nothing on xclip error/empty clipboard.
 		if xprimary == "" {
+			globalMutex.Unlock()
 			continue
 		}
 
@@ -198,7 +232,9 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 		var pub string
 
 		if *clientcfg.syncsel {
-			if pub, err = syncClips(broker, xsel, xprimary, xclipboard); err != nil {
+			var err error
+			pub, err = syncClips(broker, xsel, xprimary, xclipboard)
+			if err != nil {
 				log.Errorf("Error syncing selections (primary/clipboard): %v", err)
 			}
 		} else if memPrimary != xprimary {
@@ -220,6 +256,7 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 				cryptPassword: cryptPassword,
 			}
 		}
+		globalMutex.Unlock()
 	}
 }
 

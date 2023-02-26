@@ -1,7 +1,7 @@
-# This file is part of clipsync (C)2022 by Marco Paganini
+# This file is part of clipsync (C)2023 by Marco Paganini
 # Please see http://github.com/marcopaganini/clipsync for details.
 
-.PHONY: appimage arch clean install
+.PHONY: appimage arch clean install install-appimage
 
 bin := clipsync
 bindir := /usr/local/bin
@@ -32,6 +32,11 @@ appimage: ${bin}
 	  -i resources/${bin}.png \
 	  --create-desktop-file \
 	  --output appimage
+
+install-appimage: ${bin}
+	export VERSION="$$(git describe --exact-match --tags 2>/dev/null || git rev-parse --short HEAD)"; \
+	export APPIMAGE="${bin}-$${VERSION}-x86_64.AppImage"; \
+	install -m 755 "$${APPIMAGE}" "${bindir}/${bin}"
 
 # Creates cross-compiled tarred versions (for releases).
 arch: Makefile ${src}

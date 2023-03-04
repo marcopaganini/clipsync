@@ -339,10 +339,10 @@ func syncClips(broker mqtt.Client, xsel *xselection, xprimary, xclipboard string
 	memClipboard := xsel.getMemClipboard()
 	memPrimary := xsel.getMemPrimary()
 
-	log.Debugf("X primary: %s", redact.redact(xprimary))
-	log.Debugf("X clipboard: %s", redact.redact(xclipboard))
-	log.Debugf("Memory primary: %s", redact.redact(memPrimary))
-	log.Debugf("Memory clipboard: %s", redact.redact(memClipboard))
+	log.Tracef(1, "X primary: %s", redact.redact(xprimary))
+	log.Tracef(1, "X clipboard: %s", redact.redact(xclipboard))
+	log.Tracef(1, "Memory primary: %s", redact.redact(memPrimary))
+	log.Tracef(1, "Memory clipboard: %s", redact.redact(memClipboard))
 
 	if xclipboard != "" && xclipboard != memClipboard {
 		// Only copy clipboard to primary if they differ. Otherwise, we end up
@@ -356,8 +356,8 @@ func syncClips(broker mqtt.Client, xsel *xselection, xprimary, xclipboard string
 				return "", err
 			}
 		}
-		log.Debugf("Setting mem primary = X clipboard: %s", redact.redact(xclipboard))
-		log.Debugf("Setting mem clipboard = X clipboard: %s", redact.redact(xclipboard))
+		log.Tracef(1, "Setting mem primary = X clipboard: %s", redact.redact(xclipboard))
+		log.Tracef(1, "Setting mem clipboard = X clipboard: %s", redact.redact(xclipboard))
 		xsel.setMemPrimary(xclipboard)
 		xsel.setMemClipboard(xclipboard)
 
@@ -371,8 +371,8 @@ func syncClips(broker mqtt.Client, xsel *xselection, xprimary, xclipboard string
 			}
 		}
 
-		log.Debugf("Setting mem clipboard = X primary: %s", redact.redact(xprimary))
-		log.Debugf("Setting mem primary = X primary: %s", redact.redact(xprimary))
+		log.Tracef(1, "Setting mem clipboard = X primary: %s", redact.redact(xprimary))
+		log.Tracef(1, "Setting mem primary = X primary: %s", redact.redact(xprimary))
 		xsel.setMemClipboard(xprimary)
 		xsel.setMemPrimary(xprimary)
 

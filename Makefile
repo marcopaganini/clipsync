@@ -19,6 +19,7 @@ clean:
 	rm -f "docs/${bin}.1"
 	rm -rf "${appdir}"
 	rm -rf "${archdir}"
+	rm -f *.AppImage
 
 install: ${bin}
 	install -m 755 "${bin}" "${bindir}"
@@ -33,7 +34,7 @@ appimage: ${bin}
 	  --create-desktop-file \
 	  --output appimage
 
-install-appimage: ${bin}
+install-appimage: appimage
 	export VERSION="$$(git describe --exact-match --tags 2>/dev/null || git rev-parse --short HEAD)"; \
 	export APPIMAGE="${bin}-$${VERSION}-x86_64.AppImage"; \
 	install -m 755 "$${APPIMAGE}" "${bindir}/${bin}"

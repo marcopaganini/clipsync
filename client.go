@@ -210,11 +210,14 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 			globalMutex.Unlock()
 			continue
 		}
-		xprimary := xsel.getXPrimary("")
-		xclipboard := xsel.getXClipboard("text/plain")
-		log.Debugf("==> Clipboard EVENT: primary=%s, clipboard=%s", redact.redact(xprimary), redact.redact(xclipboard))
+		// Definitive primary and clipboard values must be taken after the lock.
+		log.Debugf("==> Clipboard EVENT: primary=%s, clipboard=%s",
+			redact.redact(xsel.getXPrimary("")),
+			redact.redact(xsel.getXClipboard("text/plain")))
 
 		globalMutex.Lock()
+		xprimary := xsel.getXPrimary("")
+		xclipboard := xsel.getXClipboard("text/plain")
 		log.Debugf("Acquired mutex lock: primary=%s, clipboard=%s", redact.redact(xprimary), redact.redact(xclipboard))
 
 		// Do nothing on xclip error/empty clipboard.

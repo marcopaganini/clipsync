@@ -76,8 +76,11 @@ func clientcmd(cfg globalConfig, clientcfg clientConfig, instanceID string, cryp
 // information is available, it processes the incoming request.
 func subHandler(incoming chan mqttCallback, xsel *xselection, hashcache *cache.Cache, syncsel bool, instanceID string, cryptPassword []byte) {
 	for {
+		log.Debug("subHandler waiting for data")
 		ch := <-incoming
+		log.Debug("==> Received request from server. Waiting to acquire mutex lock.")
 		globalMutex.Lock()
+		log.Debug("Acquired mutex lock.")
 
 		payload := ch.msg.Payload()
 		broker := ch.client
@@ -145,6 +148,7 @@ func subHandler(incoming chan mqttCallback, xsel *xselection, hashcache *cache.C
 				continue
 			}
 		}
+		log.Debugf("subHandler work finished.")
 		globalMutex.Unlock()
 	}
 }
@@ -199,20 +203,23 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 
 	for {
 		// Wait for primary or clipboard change.
+		log.Debug("clientloop waiting for clipboard changes")
 		if cnotify() != 0 {
 			log.Errorf("ClipNotify returned error. Will wait and retry.")
 			time.Sleep(time.Duration(2) * time.Second)
 			globalMutex.Unlock()
 			continue
 		}
-		globalMutex.Lock()
-
 		xprimary := xsel.getXPrimary("")
 		xclipboard := xsel.getXClipboard("text/plain")
-		log.Debugf("Clipboard CHANGED: primary=%s, clipboard=%s", redact.redact(xprimary), redact.redact(xclipboard))
+		log.Debugf("==> Clipboard EVENT: primary=%s, clipboard=%s", redact.redact(xprimary), redact.redact(xclipboard))
+
+		globalMutex.Lock()
+		log.Debugf("Acquired mutex lock: primary=%s, clipboard=%s", redact.redact(xprimary), redact.redact(xclipboard))
 
 		// Do nothing on xclip error/empty clipboard.
 		if xprimary == "" {
+			log.Debug("Received event, but primary is empty. Doing nothing")
 			globalMutex.Unlock()
 			continue
 		}
@@ -260,6 +267,7 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 				cryptPassword: cryptPassword,
 			}
 		}
+		log.Debug("clientloop finished work")
 		globalMutex.Unlock()
 	}
 }
@@ -381,7 +389,7 @@ func syncClips(broker mqtt.Client, xsel *xselection, xprimary, xclipboard string
 
 	// Publish to server, if needed
 	if pub != "" {
-		log.Debugf("Requesting publication of: %s", redact.redact(pub))
+		log.Debugf("syncClips returning %s", redact.redact(pub))
 	}
 	return pub, nil
 }

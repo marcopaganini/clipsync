@@ -245,7 +245,10 @@ func main() {
 	}
 
 	// Unique instance ID.
-	instanceID := randomID()
+	instanceID, err := instanceID()
+	if err != nil {
+		fatal(err)
+	}
 	log.Debugf("Instance ID: %s", instanceID)
 
 	switch cmdline {

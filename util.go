@@ -5,12 +5,10 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/fredli74/lockfile"
 	log "github.com/romana/rlog"
@@ -80,8 +78,12 @@ func fileExists(filename string) bool {
 	return !info.IsDir()
 }
 
-// randomID generates a 4-byte random ID (hexstring).
-func randomID() string {
-	r := rand.New(rand.NewSource(time.Now().UnixMicro()))
-	return fmt.Sprintf("%08.8x", r.Int31())
+// instanceID  generates a unique instance ID based on the machine name,
+// display, and a random number unique for this run.
+func instanceID() (string, error) {
+	host, err := os.Hostname()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s%s-%d", host, os.Getenv("DISPLAY"), os.Getpid()), nil
 }

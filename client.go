@@ -214,8 +214,15 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 			redact.redact(xsel.getXClipboard("text/plain")))
 
 		globalMutex.Lock()
+
 		xprimary := xsel.getXPrimary("")
 		xclipboard := xsel.getXClipboard("text/plain")
+		memPrimary := xsel.getMemPrimary()
+		memClipboard := xsel.getMemClipboard()
+
+		primaryChanged := (xprimary != memPrimary)
+		clipboardChanged := (xclipboard != memClipboard)
+
 		log.Debugf("Acquired mutex lock: primary=%s, clipboard=%s", redact.redact(xprimary), redact.redact(xclipboard))
 
 		// Do nothing on xclip error/empty clipboard.
@@ -225,7 +232,26 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 			continue
 		}
 
-		memPrimary := xsel.getMemPrimary()
+		// Don't try to sync the clipboard if both the primary and clipboard
+		// changed. This means we have a program that changed both, sometimes
+		// with different mime-types on the clipboard. E.g: Google sheets on
+		// chrome. In this case, just set memPrimary and memClipboard and
+		// set primary for publication.
+		if primaryChanged && clipboardChanged {
+			log.Debug("Both primary and clipboard changed. Will not attempt to sync.")
+			xsel.setMemPrimary(xprimary)
+			xsel.setMemClipboard(xclipboard)
+
+			dpchan <- delayedPublishChan{
+				broker:        broker,
+				topic:         topic,
+				content:       xprimary,
+				instanceID:    instanceID,
+				cryptPassword: cryptPassword,
+			}
+			globalMutex.Unlock()
+			continue
+		}
 
 		// Restore the memory clipboard if:
 		// 1) chromeQuirk is set and...
@@ -243,7 +269,7 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 		// There's logic below to see if xprimary was set to the clipboard, if
 		// clipboard sync was requested.
 		var pub string
-		if xprimary != "" && xprimary != memPrimary {
+		if xprimary != "" && primaryChanged {
 			log.Debugf("X Primary changed: New=%s, old=%s", redact.redact(xprimary), redact.redact(memPrimary))
 			pub = xprimary
 		}

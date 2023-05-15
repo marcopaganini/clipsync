@@ -86,8 +86,6 @@ func subHandler(incoming chan mqttCallback, xsel *xselection, hashcache *cache.C
 		broker := ch.client
 
 		data := string(payload)
-		xprimary := xsel.getXPrimary("")
-		memPrimary := xsel.getMemPrimary()
 
 		var hash string
 
@@ -115,32 +113,38 @@ func subHandler(incoming chan mqttCallback, xsel *xselection, hashcache *cache.C
 			hashcache.Set(hash, true, cache.DefaultExpiration)
 		}
 
-		if mqttmsg.Message == "" {
+		xprimary := mqttmsg.Message
+		xclipboard := xsel.getXClipboard("text/plain")
+		memPrimary := xsel.getMemPrimary()
+
+		if xprimary == "" {
 			log.Debugf("Received zero-length data from server. Ignoring.")
 			globalMutex.Unlock()
 			continue
 		}
 
-		log.Debugf("Received from server [%s]: %s", mqttmsg.InstanceID, redact.redact(mqttmsg.Message))
+		log.Debugf("Received from server [%s]: %s", mqttmsg.InstanceID, redact.redact(xprimary))
 		log.Debugf("Current X primary: %s", redact.redact(xprimary))
 		log.Debugf("Current X mem primary selection: %s", redact.redact(memPrimary))
 
 		// Ignore this message if it's an echo from the mqtt server.
-		if mqttmsg.InstanceID == instanceID || mqttmsg.Message == memPrimary {
+		if mqttmsg.InstanceID == instanceID || xprimary == memPrimary {
 			log.Debugf("Ignoring our own message from mqtt server.")
 			globalMutex.Unlock()
 			continue
 		}
 
-		if err := xsel.setXPrimary(mqttmsg.Message); err != nil {
+		if err := xsel.setXPrimary(xprimary); err != nil {
 			log.Errorf("Unable to set X Primary selection: %v", err)
 		}
-		xsel.setMemPrimary(mqttmsg.Message)
+		xsel.setMemPrimary(xprimary)
 
 		// Value received from the server is always primary, so we attempt to
 		// sync primary to clipboard, if requested.
-		if syncsel {
-			if _, err := syncClipToPrimary(broker, xsel, mqttmsg.Message, xsel.getXClipboard("text/plain")); err != nil {
+		log.Debugf("New primary value: %s", xprimary)
+		log.Debugf("Current clipboard value: %s", xclipboard)
+		if syncsel && xprimary != xclipboard {
+			if err := syncPrimaryToClip(broker, xsel, xprimary); err != nil {
 				log.Debug(err)
 				globalMutex.Unlock()
 				continue
@@ -276,24 +280,26 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 
 		// xprimary <--> clipboard synchronization.
 		if *clientcfg.syncsel {
-			// Attempt to sync primary to clipboard.
-			p2c, err := syncPrimaryToClip(broker, xsel, xprimary, xclipboard)
-			if err != nil {
-				log.Errorf("Error syncing primary to clipboard: %v", err)
+			// Conditions for syncing primary to clipboard and vice-versa.
+			// Only consider clipboard -> primary if primary -> clipboard is
+			// not happening.
+			needPrimarySync := primaryChanged && xprimary != "" && xprimary != memClipboard
+			needClipboardSync := !needPrimarySync && clipboardChanged && xclipboard != "" && xclipboard != memPrimary
+
+			if needPrimarySync {
+				err := syncPrimaryToClip(broker, xsel, xprimary)
+				if err != nil {
+					log.Errorf("Error syncing primary to clipboard: %v", err)
+				}
 			}
 
-			// If primary was NOT to clipboard (!ok) attempt to sync the
-			// clipboard to primary.
-			if !p2c {
-				c2p, err := syncClipToPrimary(broker, xsel, xprimary, xclipboard)
+			if needClipboardSync {
+				err := syncClipToPrimary(broker, xsel, xclipboard)
 				if err != nil {
 					log.Errorf("Error syncing clipboard to primary: %v", err)
 				}
-				// if we synced clipboard to primary, we have a new primary to
-				// publish.
-				if c2p {
-					pub = xclipboard
-				}
+				// We synced clipboard to primary, so we have a new primary to publish.
+				pub = xclipboard
 			}
 		}
 
@@ -378,29 +384,18 @@ func delayedPublish(ch chan delayedPublishChan) {
 	}
 }
 
-// syncPrimaryToClip synchronizes the primary selection to the clipboard, if
-// needed. Returns a bool to indicate the primary was synced to the clipboard
-// and memory clipboard.
-func syncPrimaryToClip(pbroker mqtt.Client, xsel *xselection, xprimary, xclipboard string) (bool, error) {
+// syncPrimaryToClip synchronizes the primary selection to the clipboard.
+func syncPrimaryToClip(pbroker mqtt.Client, xsel *xselection, xprimary string) error {
 	memPrimary := xsel.getMemPrimary()
 	memClipboard := xsel.getMemClipboard()
 
 	log.Tracef(1, "X primary: %s", redact.redact(xprimary))
-	log.Tracef(1, "X clipboard: %s", redact.redact(xclipboard))
 	log.Tracef(1, "Memory primary: %s", redact.redact(memPrimary))
 	log.Tracef(1, "Memory clipboard: %s", redact.redact(memClipboard))
 
-	// Don't do anything if:
-	// - xprimary is empty
-	// - xprimary == memPrimary (no changes to xprimary).
-	// - xprimary == memClipboard (no need to sync).
-	if xprimary == "" || xprimary == memPrimary || xprimary == memClipboard {
-		return false, nil
-	}
-
 	log.Debugf("Setting X clipboard = X primary: %s", redact.redact(xprimary))
 	if err := xsel.setXClipboard(xprimary); err != nil {
-		return false, err
+		return err
 	}
 
 	log.Tracef(1, "Setting mem clipboard = X primary: %s", redact.redact(xprimary))
@@ -408,32 +403,21 @@ func syncPrimaryToClip(pbroker mqtt.Client, xsel *xselection, xprimary, xclipboa
 	xsel.setMemClipboard(xprimary)
 	xsel.setMemPrimary(xprimary)
 
-	return true, nil
+	return nil
 }
 
-// syncClipToPrimary synchronizes the clipboard to the primary selection, if
-// needed.  Return a bool to indicate the clipboard was synced to the primary
-// and memory primary.
-func syncClipToPrimary(pbroker mqtt.Client, xsel *xselection, xprimary, xclipboard string) (bool, error) {
+// syncClipToPrimary synchronizes the clipboard to the primary selection.
+func syncClipToPrimary(pbroker mqtt.Client, xsel *xselection, xclipboard string) error {
 	memPrimary := xsel.getMemPrimary()
 	memClipboard := xsel.getMemClipboard()
 
-	log.Tracef(1, "X primary: %s", redact.redact(xprimary))
 	log.Tracef(1, "X clipboard: %s", redact.redact(xclipboard))
 	log.Tracef(1, "Memory primary: %s", redact.redact(memPrimary))
 	log.Tracef(1, "Memory clipboard: %s", redact.redact(memClipboard))
 
-	// Don't do anything if:
-	// - xclipboard is empty
-	// - xclipboard == memClipboard (no changes).
-	// - xclipboard == memPrimary (no need to sync).
-	if xclipboard == "" || xclipboard == memClipboard || xclipboard == memPrimary {
-		return false, nil
-	}
-
 	log.Debugf("Setting X primary = X clipboard: %s", redact.redact(xclipboard))
 	if err := xsel.setXPrimary(xclipboard); err != nil {
-		return false, err
+		return err
 	}
 
 	log.Tracef(1, "Setting mem primary = X clipboard: %s", redact.redact(xclipboard))
@@ -441,7 +425,7 @@ func syncClipToPrimary(pbroker mqtt.Client, xsel *xselection, xprimary, xclipboa
 	xsel.setMemPrimary(xclipboard)
 	xsel.setMemClipboard(xclipboard)
 
-	return true, nil
+	return nil
 }
 
 // isAccent returns true if the string is one of the accents chrome sets the clipboard to.

@@ -23,7 +23,7 @@ const (
 	configDir         = "~/.config/clipsync"
 	configFile        = "config"
 	cryptPasswordFile = "crypt-password"
-	syncerLockDir     = "/var/run/lock"
+	syncerLockDir     = "/tmp"
 )
 
 // BuildVersion Holds the current git HEAD version number.

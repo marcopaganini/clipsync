@@ -187,10 +187,11 @@ func decodeMQTT(data string, cryptPassword []byte) (Lineformat, error) {
 // never returns.
 //
 // If chromeQuirk is set, the function restores the primary selection when it
-// contains a single accent character (", ', `, ^, etc). This is a workaround
-// for Chrome in Linux where chrome sometimes overwrites the primary selection
-// with a single accent when compose sequences are used. For further details
-// on this bug, see https://bugs.chromium.org/p/chromium/issues/detail?id=1213325
+// contains one of the strings used by chrome to override the clipboard (see
+// isQuirk()).  This is a workaround for Chrome in Linux where chrome sometimes
+// overwrites the primary selection with a single accent when compose sequences
+// are used.  For further details on this bug, see
+// https://bugs.chromium.org/p/chromium/issues/detail?id=1213325
 //
 // if syncSelections is set, keep both primary and clipboard selections in
 // sync (i.e. setting one will also set the other). Note that the server
@@ -261,7 +262,7 @@ func clientloop(broker mqtt.Client, xsel *xselection, clientcfg clientConfig, to
 		// 1) chromeQuirk is set and...
 		// 2) The X clipboard contains a single character in a list of characters and...
 		// 3) memClipboard does NOT contain a single unicode character (avoid loops).
-		if *clientcfg.chromequirk && isAccent(xprimary) && !isAccent(memPrimary) {
+		if *clientcfg.chromequirk && isQuirk(xprimary) && !isQuirk(memPrimary) {
 			log.Debugf("Chrome quirk detected. Restoring primary to %s", redact.redact(memPrimary))
 			xprimary = memPrimary
 			if err := xsel.setXPrimary(memPrimary); err != nil {
@@ -428,15 +429,20 @@ func syncClipToPrimary(pbroker mqtt.Client, xsel *xselection, xclipboard string)
 	return nil
 }
 
-// isAccent returns true if the string is one of the accents chrome sets the clipboard to.
-func isAccent(s string) bool {
-	accents := map[string]bool{
-		"´": true,
-		"¨": true,
-		"`": true,
-		"~": true,
-		"^": true,
+// isQuirk returns true if the string is one of the strings chrome uses to
+// override the primary selection. Please note that this list was gathered from
+// experience and must be far from complete. Also, while the original bug has
+// been fixed in chrome, other online apps (such as Google Slides) will also
+// mess with selection.
+func isQuirk(s string) bool {
+	quirks := map[string]bool{
+		"\xc2\xa0":  true, // Non breaking space (UTF-8)
+		"\xc2\xb4":  true, // Acute accent.
+		"\xc2\xa8¨": true, // umlaut
+		"`":         true,
+		"~":         true,
+		"^":         true,
 	}
-	_, ok := accents[s]
+	_, ok := quirks[s]
 	return ok
 }

@@ -20,15 +20,15 @@ const cryptKeyLen = 32
 // gcm object returned by cipher.NewGCM.
 func newGCM(key []byte) (cipher.AEAD, error) {
 	if len(key) != cryptKeyLen {
-		return nil, fmt.Errorf("Key must be exactly %d bytes long", cryptKeyLen)
+		return nil, fmt.Errorf("key must be exactly %d bytes long", cryptKeyLen)
 	}
 	c, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, fmt.Errorf("Error creating cipher: %v", err)
+		return nil, fmt.Errorf("error creating cipher: %v", err)
 	}
 	gcm, err := cipher.NewGCM(c)
 	if err != nil {
-		return nil, fmt.Errorf("Error creating GCM: %v", err)
+		return nil, fmt.Errorf("error creating GCM: %v", err)
 	}
 	return gcm, nil
 }
@@ -42,7 +42,7 @@ func encrypt(cleartext string, key []byte) (string, error) {
 	// Create a new random nonce.
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", fmt.Errorf("Error creating nonce: %v", err)
+		return "", fmt.Errorf("error creating nonce: %v", err)
 	}
 	return string(gcm.Seal(nonce, nonce, []byte(cleartext), nil)), nil
 }
@@ -60,7 +60,7 @@ func decrypt(ciphertext string, key []byte) (string, error) {
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
 	cleartext, err := gcm.Open(nil, []byte(nonce), []byte(ciphertext), nil)
 	if err != nil {
-		return "", fmt.Errorf("Error decrypting text: %v", err)
+		return "", fmt.Errorf("error decrypting text: %v", err)
 	}
 	return string(cleartext), nil
 }
@@ -78,7 +78,7 @@ func encrypt64(cleartext string, key []byte) (string, error) {
 func decrypt64(ciphertext string, key []byte) (string, error) {
 	c, err := base64.StdEncoding.DecodeString(ciphertext)
 	if err != nil {
-		return "", fmt.Errorf("Error decoding base64 encrypted text: %v", err)
+		return "", fmt.Errorf("error decoding base64 encrypted text: %v", err)
 	}
 	cleartext, err := decrypt(string(c), key)
 	if err != nil {

@@ -28,7 +28,7 @@ func pastecmd(cfg globalConfig, instanceID string, cryptPassword []byte) error {
 		ch <- mqttmsg.Message
 	})
 	if err != nil {
-		return fmt.Errorf("Unable to connect to broker: %v", err)
+		return fmt.Errorf("unable to connect to broker: %v", err)
 	}
 
 	// Wait for read return

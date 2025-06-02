@@ -13,11 +13,11 @@ import (
 func copycmd(cfg globalConfig, instanceID string, cryptPassword []byte, filter bool) error {
 	broker, err := newBroker(cfg, nil)
 	if err != nil {
-		return fmt.Errorf("Unable to connect to broker: %v", err)
+		return fmt.Errorf("unable to connect to broker: %v", err)
 	}
 	pub, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		return fmt.Errorf("Unable to read data from stdin: %v", err)
+		return fmt.Errorf("unable to read data from stdin: %v", err)
 	}
 	defer broker.Disconnect(1)
 	spub := string(pub)

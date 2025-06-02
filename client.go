@@ -62,7 +62,7 @@ func clientcmd(cfg globalConfig, clientcfg clientConfig, instanceID string, cryp
 	})
 
 	if err != nil {
-		return fmt.Errorf("Unable to connect to broker: %v", err)
+		return fmt.Errorf("unable to connect to broker: %v", err)
 	}
 
 	// Loops forever sending any local clipboard changes to broker.
@@ -177,7 +177,7 @@ func decodeMQTT(data string, cryptPassword []byte) (Lineformat, error) {
 	dec := gob.NewDecoder(buf)
 	var mqttmsg Lineformat
 	if err = dec.Decode(&mqttmsg); err != nil {
-		return Lineformat{}, fmt.Errorf("Error decoding MQTT message: %v", err)
+		return Lineformat{}, fmt.Errorf("error decoding MQTT message: %v", err)
 	}
 	return mqttmsg, nil
 }
